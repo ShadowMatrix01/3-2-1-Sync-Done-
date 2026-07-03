@@ -1,7 +1,9 @@
 import argparse #Needed for cmd to ensure user is given choice
 #between full and partial backup.
 import os
+from datetime import datetime
 from hashHOT import hash256_caller
+from json_control import json_writer
 def argCV():
     #Command Line Interface CLI, similar to C which makes sense.
     #considering python is an interpreted language.
@@ -18,6 +20,13 @@ for root, dirs, files in os.walk(argv.path):
         hash_calc = hash256_caller(file_path)
         if hash_calc:
            print(f"SUCCESS: The file {file} was hashed as {hash_calc}.")
+           json_dict = {
+                file_path: {
+                    "hash": hash_calc,
+                    "last_seen": datetime.now().isoformat()
+                }
+           }
+           json_writer(json_dict,"manifest.json")
         else:
           print(f"FAILURE: The following {file} could not be hashed. Check loginfo.log for information.")  
         
