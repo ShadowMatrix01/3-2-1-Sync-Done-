@@ -4,6 +4,15 @@ import os
 from datetime import datetime
 from hashHOT import hash256_caller
 from json_control import json_writer
+from json_control import hash_compare
+def manifest_updater(file_path, hash_calc):
+    json_dict = {
+            file_path: {
+                "hash": hash_calc,
+                "last_seen": datetime.now().isoformat()
+            }
+    }      
+    json_writer(json_dict,"manifest.json")
 def argCV():
     #Command Line Interface CLI, similar to C which makes sense.
     #considering python is an interpreted language.
@@ -19,16 +28,27 @@ for root, dirs, files in os.walk(argv.path):
         file_path = os.path.join(root, file)
         hash_calc = hash256_caller(file_path)
         if hash_calc:
-           print(f"SUCCESS: The file {file} was hashed as {hash_calc}.")
-           json_dict = {
-                file_path: {
-                    "hash": hash_calc,
-                    "last_seen": datetime.now().isoformat()
-                }
-           }
-           json_writer(json_dict,"manifest.json")
+           status = hash_compare(file_path, hash_calc, "manifest.json")
+           if "new" in status: 
+                print(f"SUCCESS: The file {file} was hashed as {hash_calc}.")
+                manifest_updater(file_path, hash_calc)
+           elif "corrupted" in status: 
+                 print(f"WARNING! This file {file} has been changed or corrupted!")
+                 sel = input("Type 'CONTINUE' to update manifest with new hash, or 'EXIT' to abort: ").strip().upper()
+                 if sel == "CONTINUE":
+                    manifest_updater(file_path, hash_calc)
+                    print("Manifest has been updated, continuing program operation.")
+                 elif sel == "EXIT":
+                    print("Program quitting for data integrity purposes. Please check manifest.json and loginfo.log")
+                    exit()
+                 else:
+                    print("Aborting program for security reasons.")
+                    exit() 
+           else:
+                print(f"The file {file} has not been modified since it was last seen. Updating timestamp.")
+                manifest_updater(file_path, hash_calc)
         else:
           print(f"FAILURE: The following {file} could not be hashed. Check loginfo.log for information.")  
-        
+  
 
 #os.walk(): https://www.w3schools.com/python/ref_os_walk.asp
