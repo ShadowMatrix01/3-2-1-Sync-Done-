@@ -14,6 +14,7 @@ To ensure connectivity with a cloud data storage provider, the user will have to
 -----------------------------------------------------------------------------------------------
 ## How To Run
 To run the 3-2-1 Sync Done! application, type the following command into the terminal: **python main-control.py --path "/path/to/data"** or if you want to only to use the program on files with a specific extension, please use the command **python main-control.py --path "/path/to/data" --ext "extension".** You **must** provide a directory to a **folder**, not a path to a specific file. If this doesn't work, it is likely because of Windows. As such, if Python is installed correctly use this: **/c/Users/YOURUSERNAME/AppData/Local/Programs/Python/Python312/python.exe main-control.py --path "/path/to/data" --ext "extension"**.
+
 -----------------------------------------------------------------------------------------------
 ## Miscellaneous
 At this stage of the project, I cannot make any promises that all features I intend to add will be able to be done. If this is the case, this ReadMe.md will be updated accordingly. Also, please note, due to the sensitive nature of data, I do not have the capability to retrieve any lost, corrupted, or tampered data. As such, if something does go wrong in regards to the data itself, you should reach out to dedicated data recovery specialists or your cloud storage provider directly. Thank you! 
