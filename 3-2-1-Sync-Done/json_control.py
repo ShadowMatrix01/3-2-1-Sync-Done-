@@ -17,8 +17,7 @@ def json_writer(hash, path):
      list.update(hash)
      with open(path, "w") as f:
         json.dump(list, f, indent=4)
-     if val % 2048 == 0:
-         logging.info(f"Successfully updated manifest with {len(hash)} entries.")
+     logging.info(f"Successfully updated manifest with {len(hash)} entries.")
 def hash_compare(file_path, current_hash, manifest_path):
     if not os.path.exists(manifest_path):
         return "new" 
