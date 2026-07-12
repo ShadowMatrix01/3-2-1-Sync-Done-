@@ -18,6 +18,10 @@ def json_writer(hash, path):
      with open(path, "w") as f:
         json.dump(list, f, indent=4)
      logging.info(f"Successfully updated manifest with {len(hash)} entries.")
+  else:
+    print(f"{path} does not exist, please create file manually!")
+    logging.error(f"{path} does not exist, please create file manually!")
+    exit()
 def hash_compare(file_path, current_hash, manifest_path):
     if not os.path.exists(manifest_path):
         return "new" 
