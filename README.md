@@ -18,7 +18,7 @@ To run the 3-2-1 Sync Done! application, type the following command into the ter
 -----------------------------------------------------------------------------------------------
 ## Miscellaneous
 At this stage of the project, I cannot make any promises that all features I intend to add will be able to be done. If this is the case, this ReadMe.md will be updated accordingly. Also, please note, due to the sensitive nature of data, I do not have the capability to retrieve any lost, corrupted, or tampered data. As such, if something does go wrong in regards to the data itself, you should reach out to dedicated data recovery specialists or your cloud storage provider directly. Thank you! 
-### **LAST UPDATED: July 10th, 2026.**
+### **LAST UPDATED: July 11th, 2026.**
 
 
 
