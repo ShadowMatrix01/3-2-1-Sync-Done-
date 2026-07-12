@@ -4,16 +4,15 @@ import argparse #Needed for cmd to ensure user is given choice
 import os
 from datetime import datetime
 from hashHOT import hash256_caller
-from json_control import json_writer
-from json_control import hash_compare
+from json_control import json_writer, hash_compare, load_manifest
 BATCH_SIZE = 4096 #Constant, because the amount of IO operations was slowing down the project by a lot.
 buffer_arr = {}
 write_now = False
-def source_updater(root, dirs, files, this_one):
+def source_updater(root, files, this_one, manifest):
     for file in files:
         if argv.ext and not file.endswith(argv.ext):
            continue
-        if os.path.basename(file) in ["manifest.json", "loginfo.log"]:
+        if os.path.basename(file) in ["manifest.json", "manifest2.json" "loginfo.log"]:
            continue
         file_path = os.path.join(root, file)
         hash_calc = hash256_caller(file_path)
@@ -62,12 +61,14 @@ def argCV():
     arg.add_argument("--ext", help="Optional: Only backup files by extension (e.g., .jpg, .pdf, etc.)")
     return arg.parse_args()
 argv = argCV()
+manifest_source = load_manifest("manifest.json")
 for root, dirs, files in os.walk(argv.source):
-    source_updater(root, dirs, files, this_one="source")
+    source_updater(root, files, this_one="source", manifest=manifest_source)
 manifest_updater(None, None, write_now=True, which_one="source")
 buffer_arr = {}
+manifest_target = load_manifest("manifest2.json")
 for root, dirs, files in os.walk(argv.source2):
-    source_updater(root, dirs, files, this_one="target")
+    source_updater(root, files, this_one="target", manifest=manifest_target)
 manifest_updater(None, None, write_now=True, which_one="target")
 #os.walk(): https://www.w3schools.com/python/ref_os_walk.asp
 #shebang: https://realpython.com/python-shebang/ 
