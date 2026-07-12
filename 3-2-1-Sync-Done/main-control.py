@@ -65,10 +65,11 @@ manifest_source = load_manifest("manifest.json")
 for root, dirs, files in os.walk(argv.source):
     source_updater(root, files, this_one="source", manifest=manifest_source)
 manifest_updater(None, None, write_now=True, which_one="source")
-buffer_arr = {}
-manifest_target = load_manifest("manifest2.json")
-for root, dirs, files in os.walk(argv.source2):
-    source_updater(root, files, this_one="target", manifest=manifest_target)
-manifest_updater(None, None, write_now=True, which_one="target")
+if argv.source2: #Because it would crash, for obvious reasons.
+   buffer_arr = {}
+   manifest_target = load_manifest("manifest2.json")
+   for root, dirs, files in os.walk(argv.source2):
+      source_updater(root, files, this_one="target", manifest=manifest_target)
+   manifest_updater(None, None, write_now=True, which_one="target")
 #os.walk(): https://www.w3schools.com/python/ref_os_walk.asp
 #shebang: https://realpython.com/python-shebang/ 
