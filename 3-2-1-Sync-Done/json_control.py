@@ -4,6 +4,15 @@ import os
 from datetime import datetime
 val = 0
 logging.basicConfig(level=logging.INFO, filename='loginfo.log', format='%(asctime)s - %(levelname)s: %(message)s',force=True)
+def load_manifest(path): #Rewritten, because my old program was opening the manifest everytime so now it is O(n) instead of O(n^2).
+     if not os.path.exists(path) or os.path.getsize(path) == 0:
+        return {}
+     with open(path, "r") as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            logging.error(f"Manifest is corrupted, rebuilding. Date and time: {datetime.now().isoformat()}")
+            return {}
 def json_writer(hash, path):
   global val
   val = val + len(hash)
@@ -22,16 +31,7 @@ def json_writer(hash, path):
     print(f"{path} does not exist, please create file manually!")
     logging.error(f"{path} does not exist, please create file manually!")
     exit()
-def hash_compare(file_path, current_hash, manifest_path):
-    if not os.path.exists(manifest_path):
-        return "new" 
-    if os.path.getsize(manifest_path) == 0:
-        return "new"
-    with open(manifest_path, "r") as f:
-        try:
-            manifest_data = json.load(f) 
-        except json.JSONDecodeError:
-            return "new"
+def hash_compare(file_path, current_hash, manifest_data):
     if file_path not in manifest_data:
         return "new"
     stored_hash = manifest_data[file_path]["hash"]
