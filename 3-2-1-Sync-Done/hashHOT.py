@@ -12,7 +12,7 @@ def hash256_caller(file, attempt = 3):
         logging.warning(f"Retry {i+1} for {file}")
    return None
 
-def hash256(file, max = 65536): #This is needed 
+def hash256(file, max = 1048576): #This is needed 
     #because without the max size, then it would take too much ram
     #since each of the files would be loaded there, and I don't want that 
     #for the program
