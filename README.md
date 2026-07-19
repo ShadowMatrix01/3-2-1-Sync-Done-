@@ -1,6 +1,14 @@
 # 3-2-1-Sync-Done!
 ## Project Overview
-3-2-1, Sync Done! Demonstrates core data protection strategies in a practical way. It is a companion to the industry standard 3-2-1 data backup policy and focuses on data integrity. The project uses scripts, cloud and local storage, health checks, and storage alerts to support these principles and help prevent hardware failure, bit rot, ransomware, file tampering, synchronization failures, software bugs, and human error.
+3-2-1, Sync Done! Demonstrates core data protection strategies in a practical way. It is a companion to the industry standard 3-2-1 data backup policy and focuses on data integrity. The project uses scripts, cloud and local storage, health checks, and storage alerts to support these principles and help prevent hardware failure, bit rot, ransomware, file tampering, synchronization failures, software bugs, and human error. 
+
+-----------------------------------------------------------------------------------------------
+## DISCLAIMER, AND SETUP INSTRUCTIONS
+This tool is a file integrity auditor. It is **not** an antivirus. This project includes optional integration with the VirusTotal API. Usage of this feature is entirely at the user's discretion and is subject to VirusTotal's Terms of Service. The developer of this tool assumes no liability for the user's compliance with these terms or for the API's rate-limiting policies.
+**You must supply your own VirusTotal key in your own .env file. In this .env file, use the following format:**
+URL=https://www.virustotal.com/api/v3/files/
+APIKEY=YOURAPIKEY
+For more information, please visit: https://docs.virustotal.com/docs/api-overview. 
 
 ------------------------------------------------------------------------------------------------
 ### Language 
@@ -13,7 +21,7 @@ To ensure connectivity with a cloud data storage provider, the user will have to
 -----------------------------------------------------------------------------------------------
 ## How To Run
 
-### Hashing Files
+### Hashing Files and Checking Intregrity of Files, MODE A.
 
 #### Windows
 
@@ -23,7 +31,7 @@ To run the 3-2-1 Sync Done! application for hashing files, type the following co
 
 To run the 3-2-1 Sync Done! application for hashing files on macOS or Linux, type the following command into the terminal: **python3 main-control.py --source "/path/to/data" --source2 "/path/to/data" --mode "A".** If you want to use the program only on files with a specific extension, use: **python3 main-control.py --source "/path/to/data" --source2 "/path/to/data" --ext "extension" --mode "A".** You **must** provide a directory path, not a specific file path. On most macOS and Linux systems, python3 is the correct command. If python3 does not work, try replacing it with python. Please note that --source2 and --ext are optional, while --source and --mode are **required**.
 
-### Checking the integrity of a specific file in a specific manifest
+### Checking the integrity of a specific file in a specific manifest, MODES: 1B, 2B, 3B (Coming Soon).
 
 To run the 3-2-1 Sync Done! application to verify the integrity of a specific file, you must note the following.
 
@@ -39,5 +47,5 @@ To run the 3-2-1 Sync Done! application to verify the integrity of a specific fi
 
 -----------------------------------------------------------------------------------------------
 ## Miscellaneous
-At this stage of the project, I cannot make any promises that all features I intend to add will be able to be done. If this is the case, this ReadMe.md will be updated accordingly. Also, please note, due to the sensitive nature of data, I do not have the capability to retrieve any lost, corrupted, or tampered data. As such, if something does go wrong in regards to the data itself, you should reach out to dedicated data recovery specialists or your cloud storage provider directly. Thank you! 
-### **LAST UPDATED: July 17th, 2026.**
+At this stage of the project, I cannot make any promises that all features I intend to add will be able to be done. If this is the case, this ReadMe.md will be updated accordingly. This tool is for diagnostic purposes only and does not provide data recovery services. If data loss or corruption is detected, users should rely on their established backup restoration procedures or professional data recovery services. Thank you! 
+### **LAST UPDATED: July 19th, 2026.**
