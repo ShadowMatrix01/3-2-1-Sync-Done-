@@ -2,18 +2,19 @@
 import argparse #Needed for cmd to ensure user is given choice
 #between full and partial backup.
 import os
-import shutil #Added so the user can copy files from one location to another. Will be added later.
 import ijson #Because otherwise, retrieving the file from manifest would be too inefficient.
+import logging
+import tkinter as tk
 from datetime import datetime
 from hashHOT import hash256_caller
 from json_control import json_writer, hash_compare, load_manifest
 from tqdm import tqdm
-import logging
+from tkinter import ttk
 BATCH_SIZE = 4096 #Constant, because the amount of IO operations was slowing down the project by a lot.
 buffer_arr = {}
 seen_and_banned = {}
 write_now = False
-EXCLUDED = ["manifest.json", "loginfo.log", "manifest2.json"]
+EXCLUDED = ["manifest.json", "loginfo.log", "manifest2.json", "VT_check.log", "VT_online_check.py"]
 logging.basicConfig(level=logging.WARNING, filename='loginfo.log', format='%(asctime)s - %(levelname)s: %(message)s')
 def argCV():
     #Command Line Interface CLI, similar to C which makes sense.
