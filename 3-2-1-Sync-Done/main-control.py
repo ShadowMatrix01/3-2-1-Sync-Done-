@@ -10,6 +10,7 @@ from hashHOT import hash256_caller
 from json_control import json_writer, hash_compare, load_manifest
 from tqdm import tqdm
 from tkinter import ttk
+from VT_online_check import online_check
 BATCH_SIZE = 4096 #Constant, because the amount of IO operations was slowing down the project by a lot.
 buffer_arr = {}
 seen_and_banned = {}
@@ -78,7 +79,7 @@ def source_updater(root, files, pbar, manifest_data, this_one):
            continue
         if file in seen_and_banned:
            continue
-        file_path = os.path.join(root, file)
+        file_path = os.path.normpath(os.path.join(root, file))
         try:
             f_stat = os.stat(file_path)
             cur_mtime = round(f_stat.st_mtime, 4) #Avoids inconsentencies in floating point times.
@@ -96,17 +97,23 @@ def source_updater(root, files, pbar, manifest_data, this_one):
            if "new" in status: 
                 manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
            elif "corrupted" in status: 
-                 pbar.write(f"\nWARNING! This file {file} has been changed or corrupted!")
-                 sel = input("Type 'CONTINUE' to update manifest with new hash, or 'EXIT' to abort: ").strip().upper()
-                 if sel == "CONTINUE":
-                    manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
-                    pbar.write("\nManifest has been updated, continuing program operation.")
-                 elif sel == "EXIT":
-                    pbar.write("\nProgram quitting for data integrity purposes. Please check manifest.json and loginfo.log")
-                    exit()
-                 else:
-                    pbar.write("\nAborting program for security reasons.")
-                    exit() 
+                 pbar.write(f"\n\nWARNING! This file {file} has been changed or corrupted!")
+                 while True:
+                     sel = input("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ").strip().upper()
+                     if sel == "CON":
+                        manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
+                        pbar.write("\n\nManifest has been updated, continuing program operation.")
+                        break
+                     elif sel == "CONVT":
+                        pbar.write("\n\nPlease wait while the program checks the global virus database...")
+                        online_check(hash_calc, file_path, pbar)
+                        break
+                     elif sel == "EXIT":
+                        pbar.write("\n\nProgram quitting for data integrity purposes. Please check manifest.json and loginfo.log")
+                        exit()
+                     else:
+                        pbar.write("\n\nInvalid input. Please try again.")
+                        continue
            elif "same" in status:
                 manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
         else:
