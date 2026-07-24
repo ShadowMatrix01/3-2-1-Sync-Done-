@@ -11,7 +11,7 @@
 
 **Do NOT include the numbers 1 or 2. Put each field on its own line, and ensure no spaces between the equal sign, before the key, and after the value.**
 
-Ensure the VirusTotal API is working by running Mode 3B, and select option 2 from the menu. 
+Ensure the VirusTotal API is working by running Mode C, and select option C from the menu. 
 For more information, please visit: https://docs.virustotal.com/docs/api-overview. 
 
 **Discord Webhook Setup:** 
@@ -23,7 +23,7 @@ To receive notifications from the app in Discord, please follow these steps:
 5. Select the channel where you want notifications to appear.
 6. Click Copy Webhook URL.
 7. In the **.env** file, add this: WEBHOOK=yourdiscordwebhook and save.
-8. Ensure the webhook is working by running Mode 3B, and select option 3 from the menu.
+8. Ensure the webhook is working by running Mode C, and select option B from the menu.
 9. After verification is successful, you are done!
 ------------------------------------------------------------------------------------------------
 ### Language 
@@ -66,7 +66,7 @@ To run the 3-2-1 Sync Done! application to verify the integrity of a specific fi
 
 ### Check if local notifications, Discord Webhook, and VirusTotal API are working as intended, MODE C.
 
-Mode C allows you to check before running the program if everything is setup correctly. Mode C only requires two arguments, which are --source and --mode "3B". However, unlike the other modes, source should be an empty string "" since the program does not require a path to verify program functionality. To run this mode, simply enter the following into your terminal:
+Mode C allows you to check before running the program if everything is setup correctly. Mode C only requires two arguments, which are --source and --mode "C". However, unlike the other modes, source should be an empty string "" since the program does not require a path to verify program functionality. To run this mode, simply enter the following into your terminal:
 
 #### Windows
 Run this command: **python main-control.py --source "" --mode "C"**
