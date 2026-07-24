@@ -4,13 +4,12 @@ import argparse #Needed for cmd to ensure user is given choice
 import os
 import ijson #Because otherwise, retrieving the file from manifest would be too inefficient.
 import logging
-import tkinter as tk
 from datetime import datetime
 from hashHOT import hash256_caller
 from json_control import json_writer, hash_compare, load_manifest
 from tqdm import tqdm
-from tkinter import ttk
 from VT_online_check import online_check
+from notify import main_menu
 BATCH_SIZE = 4096 #Constant, because the amount of IO operations was slowing down the project by a lot.
 buffer_arr = {}
 seen_and_banned = {}
@@ -21,12 +20,13 @@ def argCV():
     #Command Line Interface CLI, similar to C which makes sense.
     #considering python is an interpreted language.
     arg = argparse.ArgumentParser(description="3-2-1 Sync Done! A Data Integrity Solution")
-    arg.add_argument("--source", required=True, help="REQUIRED: Please add root directory as a string (e.g. \"C:\\Users\\Username\")")
+    arg.add_argument("--source", required=True, help="REQUIRED: Please add root directory as a string (e.g. \"C:\\Users\\Username\").")
     arg.add_argument("--source2", required=False, help="Optional: Add second directory to compare as a string (e.g. \"C:\\Users\\Username\")")
     arg.add_argument("--ext", help="Optional: Only backup files by extension (as a \"string\") (e.g., \".jpg\", \".pdf\", etc.)")
     arg.add_argument("--mode", required=True, 
                      help="REQUIRED: Mode A: Hash Files.\nMode 1B: Check FILE integrity "
-                     "in manifest.json.\nMode 2B: Check FILE integrity in manifest2.json")
+                     "in manifest.json.\nMode 2B: Check FILE integrity in manifest2.json" 
+                     "\nMode 3B: Check if Notifications, Webhook, and VT API are working (use a random string for --source)")
     return arg.parse_args()
 def retrieve_file(target_path, manifest_data):
     if not os.path.exists(manifest_data) or os.path.getsize(manifest_data) == 0:
@@ -158,6 +158,8 @@ elif (argv.mode == "1B" or argv.mode == "2B") and not argv.source2:
      else:
         manifest = "manifest2.json"
      check_if_file_exists(argv.source, manifest)
+elif argv.mode == "C":
+     main_menu()
 else:
     if not argv.source2:
        print(f"{argv.mode} is not a valid mode. Please try again.")
