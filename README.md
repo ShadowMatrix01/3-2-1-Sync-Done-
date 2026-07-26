@@ -84,4 +84,4 @@ From here, you will be prompted to select an option from a menu, please type the
 -----------------------------------------------------------------------------------------------
 ## Miscellaneous
 At this stage of the project, I cannot make any promises that all features I intend to add will be able to be done. If this is the case, this ReadMe.md will be updated accordingly. This tool is for diagnostic purposes only and does not provide data recovery services. If data loss or corruption is detected, users should rely on their established backup restoration procedures or professional data recovery services. Thank you! 
-### **LAST UPDATED: July 24th, 2026.**
+### **LAST UPDATED: July 26th, 2026.**
