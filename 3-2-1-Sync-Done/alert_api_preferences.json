@@ -1,0 +1,6 @@
+{
+    "webhook_alerts": "true",
+    "local_alerts": "true",
+    "virus_total_check": "true",
+    "first_run": "false"
+}

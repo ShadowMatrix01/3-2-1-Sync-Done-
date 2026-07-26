@@ -15,7 +15,7 @@ def suspicious_file_log(file, response, dest):
         time = datetime.now().isoformat()
         f.write(f"{file} was marked as suspicious on {time}. \nResponse from VT: {response}") 
         json.dump(response, f, indent=4)
-def online_check(hash, file, pbar):
+def online_check(hash, file, pbar, local_notif, webhook_notif):
     base_url = os.getenv("URL")
     api_key = os.getenv("APIKEY")
     if not api_key:
