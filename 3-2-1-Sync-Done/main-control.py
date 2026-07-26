@@ -2,6 +2,8 @@
 import argparse #Needed for cmd to ensure user is given choice
 #between full and partial backup.
 import os
+from dotenv import load_dotenv
+import json
 import ijson #Because otherwise, retrieving the file from manifest would be too inefficient.
 import logging
 from datetime import datetime
@@ -9,13 +11,28 @@ from hashHOT import hash256_caller
 from json_control import json_writer, hash_compare, load_manifest
 from tqdm import tqdm
 from VT_online_check import online_check
-from notify import main_menu
+from notify import main_menu, local_notification_check, webhook_check, VT_check, alert_preferences
+load_dotenv()
 BATCH_SIZE = 4096 #Constant, because the amount of IO operations was slowing down the project by a lot.
 buffer_arr = {}
 seen_and_banned = {}
 write_now = False
+vt_check = False
+local_notif = False
+webhook_notif = False
 EXCLUDED = ["manifest.json", "loginfo.log", "manifest2.json", "VT_check.log", "VT_online_check.py"]
 logging.basicConfig(level=logging.WARNING, filename='loginfo.log', format='%(asctime)s - %(levelname)s: %(message)s')
+def validate(): #Because otherwise, invalid json would be accepted, so it is checked before anything.
+    setup = alert_preferences("main-control")
+    if not setup:
+       print("\n\nPlease check .env file, and run mode C for setup validation.")
+       exit()
+    global local_notif
+    global webhook_notif
+    global vt_check
+    vt_check = VT_check("main-control")
+    local_notif = local_notification_check("main-control")
+    webhook_notif = webhook_check("main-control")
 def argCV():
     #Command Line Interface CLI, similar to C which makes sense.
     #considering python is an interpreted language.
@@ -96,7 +113,7 @@ def source_updater(root, files, pbar, manifest_data, this_one):
            status = hash_compare(file_path, hash_calc, manifest_data)
            if "new" in status: 
                 manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
-           elif "corrupted" in status: 
+           elif "corrupted" in status:
                  pbar.write(f"\n\nWARNING! This file {file} has been changed or corrupted!")
                  while True:
                      sel = input("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ").strip().upper()
@@ -104,15 +121,18 @@ def source_updater(root, files, pbar, manifest_data, this_one):
                         manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
                         pbar.write("\n\nManifest has been updated, continuing program operation.")
                         break
-                     elif sel == "CONVT":
+                     elif sel == "CONVT" and vt_check:
                         pbar.write("\n\nPlease wait while the program checks the global virus database...")
-                        online_check(hash_calc, file_path, pbar)
+                        online_check(hash_calc, file_path, pbar, local_notif, webhook_notif)
                         break
                      elif sel == "EXIT":
                         pbar.write("\n\nProgram quitting for data integrity purposes. Please check manifest.json and loginfo.log")
                         exit()
                      else:
-                        pbar.write("\n\nInvalid input. Please try again.")
+                        if sel == "CONVT" and not vt_check:
+                           pbar.write("\n\nPlease enable VT check in .env, and please run mode C for setup validation.")
+                        else:
+                           pbar.write("\n\nInvalid input. Please try again.")
                         continue
            elif "same" in status:
                 manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
@@ -136,7 +156,11 @@ def manifest_updater(file_path, hash_calc, write_now, which_one):
         else:
            json_writer(buffer_arr,"manifest2.json")  
 argv = argCV()
+if argv.source == " " and not argv.mode == "C":
+   print("ERROR: An empty string " " was provided. This is only allowed for mode C.")
+   exit()
 if argv.mode == "A":
+   validate()
    print("Please wait while the program discovers the total number of files in the directory(s)...")
    total = total_files(argv.source, argv.ext)
    manifest_source = load_manifest("manifest.json")
@@ -153,13 +177,14 @@ if argv.mode == "A":
             source_updater(root, files, pbar, manifest_data=manifest_target, this_one="target")
       manifest_updater(None, None, write_now=True, which_one="target")
 elif (argv.mode == "1B" or argv.mode == "2B") and not argv.source2:
+     validate()
      if argv.mode == "1B":
         manifest = "manifest.json"
      else:
         manifest = "manifest2.json"
      check_if_file_exists(argv.source, manifest)
 elif argv.mode == "C":
-     main_menu()
+     main_menu("main-control")
 else:
     if not argv.source2:
        print(f"{argv.mode} is not a valid mode. Please try again.")
