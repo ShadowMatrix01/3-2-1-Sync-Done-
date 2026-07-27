@@ -12,6 +12,7 @@ from json_control import json_writer, hash_compare, load_manifest
 from tqdm import tqdm
 from VT_online_check import online_check
 from notify import main_menu, local_notification_check, webhook_check, VT_check, alert_preferences
+from plyer import notification
 load_dotenv()
 BATCH_SIZE = 4096 #Constant, because the amount of IO operations was slowing down the project by a lot.
 buffer_arr = {}
@@ -114,6 +115,16 @@ def source_updater(root, files, pbar, manifest_data, this_one):
            if "new" in status: 
                 manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
            elif "corrupted" in status:
+                 if local_notif:
+                    try:
+                      notification.notify(
+                           title="Corrupted File Warning!",
+                           message=f"{file} has been changed or is corrupted, please select an option in the program!",
+                           app_name="3-2-1-Sync-Done!",
+                           timeout=5
+                      )
+                    except Exception:
+                           pass           
                  pbar.write(f"\n\nWARNING! This file {file} has been changed or corrupted!")
                  while True:
                      sel = input("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ").strip().upper()
