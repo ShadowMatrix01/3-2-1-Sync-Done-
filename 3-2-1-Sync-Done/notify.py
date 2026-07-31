@@ -3,9 +3,14 @@ from dotenv import load_dotenv
 import requests
 import time
 import json
+import chime
 from plyer import notification #now synchronous with plyer.
 from discord_webhook import DiscordWebhook,  DiscordEmbed
 from urllib.parse import urlparse 
+def alert_sound():
+    chime.theme('chime') 
+    chime.info()
+    return
 app_state = {
     "local_notif": False,
     "webhook_notif": False,
@@ -22,7 +27,7 @@ def main_menu(program):
     while True:
         print("\nWelcome to the setup verification menu. \nFrom here, you can check if all three external services" 
         " like Desktop Notifications, Discord Webhook Integration, and VirusTotal API are working, aswell as set preferences for webhook alerts.")
-        sel = input("\nPlease select from the following options by typing the corresponding letter:\nA.Desktop Notifications Check\nB.Discord Webhook Integration\nC.VirusTotal API\nD.Set Alert Preferences\nE.Exit the Menu\n")
+        sel = input("\nPlease select from the following options by typing the corresponding letter:\nA.Desktop Notifications Check\nB.Discord Webhook Integration Check\nC.VirusTotal API Check\nD.Set Alert Preferences\nE.Exit the Menu\n")
         if sel.strip().upper() == "A":
            local_notification_check(program)
            break
@@ -77,6 +82,34 @@ def alert_preferences(program):
                 print("\nPreferences file validated, printing current settings.")
                 for key in keys:
                     print(f"{key}: {info[key]}")
+                while True: 
+                    sel = input("\nWhat values would you like to modify?"
+                    "\nA.)Webhook Alerts\nB.)Local Notifications\nC.)VirusTotal API Check\nD.)Disable all features\nE.)Enable all features\nF.)Exit\n")
+                    if sel == "A":
+                        info["webhook_alerts"] = "false" if info.get("webhook_alerts") == "true" else "true"
+                    elif sel == "B":
+                        info["local_alerts"] = "false" if info.get("local_alerts") == "true" else "true"
+                    elif sel == "C":
+                        info["virus_total_check"] = "false" if info.get("virus_total_check") == "true" else "true"
+                    elif sel == "D":
+                        info["webhook_alerts"] = "false"
+                        info["virus_total_check"] = "false"
+                        info["local_alerts"] = "false"
+                    elif sel == "E":
+                        info["webhook_alerts"] = "true"
+                        info["virus_total_check"] = "true"
+                        info["local_alerts"] = "true"
+                    elif sel == "F":
+                        break       
+                    else: 
+                        print("\nInvalid input, please try again.")
+                        continue 
+                    with open("alert_api_preferences.json", "w") as f:
+                        json.dump(info, f, indent=4)
+                        print("\nPreferences updated successfully!\nNew Preferences:")
+                        for key in keys:
+                            print(f"{key}: {info[key]}")
+                        break
             else:
                 return True   
     except FileNotFoundError:
@@ -107,9 +140,10 @@ def local_notification_check(program):
             app_name="3-2-1-Sync-Done!",
             timeout=5
         )
+        alert_sound()
     except Exception:
         pass             
-    print("\nIf a message did not appear on your screen, it is likely notifications are disabled. \nPlease enable them or visit: https://pypi.org/project/desktop-notifier/ ")
+    print("\nIf a message did not appear on your screen, it is likely notifications are disabled. \nPlease enable them or visit: https://pypi.org/project/plyer/")
     if program == "main-control":
         return True
 def webhook_check(program):
@@ -134,12 +168,10 @@ def webhook_check(program):
           return False 
        return
     try:
-        webhook = DiscordWebhook(url=webhook_id, rate_limit_retry=True)
-        msg = DiscordEmbed(title="3-2-1-Sync-Done!", description="Webhook is functional! \nIn normal use, this would be red and have more information.", color="00FF00")
-        webhook.add_embed(msg)
-        response = webhook.execute()
+        response = requests.get(webhook_id, timeout=5) #Modified because in testing the program
+        #I realized it would be annoying to constantly recieve message that it is working, instead of critical messages.
         if response and response.status_code in (200, 204):
-            print("Webhook was successful! Please check your Discord server.")
+            print("Webhook was successful!")
             if program == "main-control":
                return True
             return
@@ -237,5 +269,5 @@ def VT_check(program):
               time.sleep(2);
               return False 
 #https://pypi.org/project/discord-webhook/
-#https://www.geeksforgeeks.org/python/python-desktop-notifier-using-plyer-module/
 #https://pypi.org/project/plyer/
+#https://pypi.org/project/chime/

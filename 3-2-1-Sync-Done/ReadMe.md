@@ -31,11 +31,13 @@ This project is being made with **Python 3.12.1**, and as such uses tools and fr
 ### Tools
 Common tools in use include JavaScript Object Notation (**JSON**) for the manifest, the hashlib library for hashing files in the **SHA-256 (Secure Hash Algorithm 256-bit)** format, and the built-in logging module which directly outputs detailed information to loginfo.log.  It is quite likely that more tools will be used as the project expands in scope, especially when seamless online and local integration is added. 
 ### Frameworks/API/Other
-Desktop-notifier 6.2.0 and discord-webhook 1.4.1 are libraries that have been added to handle corrupted, tampered, and potentially malicious files by ensuring the user is not only immediately notified of an issue in the program itself, but also through the operating system's notification system and across multiple devices simultaneously through the use of Discord webhooks. This ensures that the user has a detailed log that they can reference later, should new or unusual behaviors be detected from an application, as well as ensuring the user's attention is immediately grabbed when a file is under review by the program. Desktop-notifier 6.2.0 is cross-platform, meaning that notifications will work between Windows, MacOS, and Linux. 
+Plyer 2.1.0 and discord-webhook 1.4.1 are libraries that have been added to handle corrupted, tampered, and potentially malicious files by ensuring the user is not only immediately notified of an issue in the program itself, but also through the operating system's notification system and across multiple devices simultaneously through the use of Discord webhooks. This ensures that the user has a detailed log that they can reference later, should new or unusual behaviors be detected from an application, as well as ensuring the user's attention is immediately grabbed when a file is under review by the program. Plyer 2.1.0 is cross-platform, meaning that notifications will work between Windows, MacOS, and Linux. 
 
 Please note, Discord webhooks require a free Discord account. For more information, please click here: https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks
 
-To ensure connectivity with a cloud data storage provider, the user will have to verify their credentials through a secure connection, and will be done through some SDK or API. This will be made clear as soon as more information is available.
+Chime 0.8.0 is a asimple auditory cue system that is cross compatible across different operating systems. This was added because sounds are not included with plyer, and I felt that auditory cues are needed.
+
+To ensure connectivity with a cloud data storage provider, the user will have to verify their credentials through a secure connection. Currently, I am aiming for this to be done through the Azure Storage Blobs client library for Python, as soon as I am able to.
 
 -----------------------------------------------------------------------------------------------
 ## How To Run
@@ -64,24 +66,28 @@ To run the 3-2-1 Sync Done! application to verify the integrity of a specific fi
 
 5. Improperly formatted JSON will result in the program throwing errors. It is wise to not manually modify the manifest files, and instead copy them and place them somewhere secure, before creating new manifests.
 
-### Check if local notifications, Discord Webhook, and VirusTotal API are working as intended, MODE C.
+### Check if Local Notifications, Discord Webhook, and VirusTotal API are working as intended, MODE C.
 
-Mode C allows you to check before running the program if everything is setup correctly. Mode C only requires two arguments, which are --source and --mode "C". However, unlike the other modes, source should be an empty string "" since the program does not require a path to verify program functionality. To run this mode, simply enter the following into your terminal:
+Mode C allows you to check before running the program if everything is setup correctly. Mode C only requires two arguments, which are --source and --mode "C". However, unlike the other modes, source should be an empty string with a space " " since the program does not require a path to verify program functionality. To run this mode, simply enter the following into your terminal:
 
 #### Windows
-Run this command: **python main-control.py --source "" --mode "C"**
+Run this command: **python main-control.py --source " " --mode "C"**
 #### macOS / Linux
-Run this command: **python3 main-control.py --source "" --mode "C"**
+Run this command: **python3 main-control.py --source " " --mode "C"**
 
 From here, you will be prompted to select an option from a menu, please type the corresponding character.
 
-**A.Desktop Notifications Check**
+**A. Desktop Notifications Check**
 
-**B.Discord Webhook Integration**
+**B. Discord Webhook Integration Check**
 
-**C.VirusTotal API**
+**C. VirusTotal API Check**
+
+**D. Set Alert Preferences**
+
+**E. Exit the Menu**
 
 -----------------------------------------------------------------------------------------------
 ## Miscellaneous
 At this stage of the project, I cannot make any promises that all features I intend to add will be able to be done. If this is the case, this ReadMe.md will be updated accordingly. This tool is for diagnostic purposes only and does not provide data recovery services. If data loss or corruption is detected, users should rely on their established backup restoration procedures or professional data recovery services. Thank you! 
-### **LAST UPDATED: July 26th, 2026.**
+### **LAST UPDATED: July 31st, 2026.**

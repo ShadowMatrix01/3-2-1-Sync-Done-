@@ -3,10 +3,47 @@ import logging
 from dotenv import load_dotenv
 import requests
 import json
-from datetime import datetime
+import chime
 import shutil #Added so the user can copy files from one location to another. 
+from datetime import datetime
+from plyer import notification #now synchronous with plyer.
+from discord_webhook import DiscordWebhook,  DiscordEmbed
+from urllib.parse import urlparse 
 logging.basicConfig(level=logging.WARNING, filename='VT_check.log', format='%(asctime)s - %(levelname)s: %(message)s')
 load_dotenv()
+def alert_sound():
+    chime.theme('chime') 
+    chime.info()
+    return
+def virus_local(file, count):
+     try:
+        notification.notify(
+                title="CRITICAL: MALICIOUS FILE, ACTION NEEDED!",
+                message=f"FILE: {file} MARKED AS MALICIOUS BY {count} VENDORS.",
+                app_name="3-2-1-Sync-Done!",
+                timeout=5
+        )
+        alert_sound()
+     except Exception:
+        pass    
+def virus_webhook(file, count):
+    webhook_id = os.getenv("WEBHOOK")
+    if webhook_id is None:
+       return
+    url = urlparse(webhook_id)
+    if not url.scheme or not url.netloc:
+       return
+    try:
+        webhook = DiscordWebhook(url=webhook_id, rate_limit_retry=True)
+        msg = DiscordEmbed(title="3-2-1-Sync-Done!", description=f"CRITICAL: {file} IS MARKED MALICIOUS BY {count} VENDORS. IMMEDIATE ACTION IS NEEDED NOW!", color="FF0000")
+        webhook.add_embed(msg)
+        response = webhook.execute()
+        if response and response.status_code in (200, 204):
+            return
+        else:
+            return
+    except Exception:
+        return   
 def suspicious_file_log(file, response, dest):
    os.makedirs(dest, exist_ok=True)
    file_name = os.path.basename(file)
@@ -33,16 +70,20 @@ def online_check(hash, file, pbar, local_notif, webhook_notif):
             pbar.write("Rate limit reached. Please wait a moment.")
             return
         response.raise_for_status() #https://stackoverflow.com/questions/61463224/when-to-use-raise-for-status-vs-status-code-testing
-        malicious(response.json(), file, pbar)
+        malicious(response.json(), file, pbar, local_notif, webhook_notif)
     except requests.exceptions.RequestException as e:
         pbar.write(f"API Error: {e}")
-def malicious(response_info, file, pbar):
+def malicious(response_info, file, pbar, local_notif, webhook_notif):
     if isinstance(response_info, str): #If string, then it is an error code.
        pbar.write(f"An error was encountered: {response_info}")
        return
     info = response_info.get("data",{}).get("attributes", {}).get("last_analysis_stats",{})
     count = info.get("malicious", 0)
     if count > 5:
+       if local_notif:
+          virus_local(file, count)
+       if webhook_notif:
+          virus_webhook(file, count)
        quarantine_file(file, count, response_info, pbar)
 def quarantine_file(suspicious_file, count, resp, pbar):
     quarantine_dir = "quarantine"
@@ -50,7 +91,7 @@ def quarantine_file(suspicious_file, count, resp, pbar):
     f = os.path.basename(suspicious_file)
     dst = os.path.join(quarantine_dir, f)
     logging.critical(f"ALERT! The file {suspicious_file} has been flagged by {count} vendors as being suspicious.")
-    pbar.write(f"WARNING: This file {suspicious_file} is flagged as malicious by {count} vendors.")
+    pbar.write(f"ALERT!: This file {suspicious_file} is flagged as malicious by {count} vendors.")
     while True:
         move = input("Enter 'Y' to move to quarantine folder, or 'N' if you believe this is a mistake: ").strip().upper()
         if move == "Y":
