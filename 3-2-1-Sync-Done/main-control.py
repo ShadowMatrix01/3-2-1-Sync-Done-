@@ -195,7 +195,7 @@ elif (argv.mode == "1B" or argv.mode == "2B") and not argv.source2:
         manifest = "manifest2.json"
      check_if_file_exists(argv.source, manifest)
 elif argv.mode == "C":
-     main_menu("main-control")
+     main_menu("notify")
 else:
     if not argv.source2:
        print(f"{argv.mode} is not a valid mode. Please try again.")
