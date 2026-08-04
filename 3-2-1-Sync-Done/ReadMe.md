@@ -4,13 +4,15 @@
 
 -----------------------------------------------------------------------------------------------
 ## DISCLAIMER, AND SETUP INSTRUCTIONS
+**TLDR**: Use the following format in your .env file.
+URL=https://www.virustotal.com/api/v3/files/
+APIKEY=YOUR_APIKEY
+WEBHOOK=YOUR_WEBHOOK
+AZURE_CONNECT_STR=YOUR_AZURE_CONNECTION_STRING
+AZURE_CONTAINER=YOUR_AZURE_CONTAINER_NAME
+
 **VirusTotal API DISCLAIMER:** This project includes optional integration with the VirusTotal API. This tool is a file integrity auditor. It is **not** an antivirus. It does not actively monitor your computer for viruses, and is only allowed to move files to a "quarantine" folder. This is due to VirusTotal's Terms of Service, as such, please keep this in mind. Usage of this feature is entirely at the user's discretion and is subject to VirusTotal's Terms of Service. The developer of this tool assumes no liability for the user's compliance with these terms or for the API's rate-limiting policies.
-**You must supply your own VirusTotal key in your own .env file. Through the terminal, head to where the program is located. Then use the command touch .env to create the .env file. In this .env file, use the following format:**
-1. URL=https://www.virustotal.com/api/v3/files/
-2. APIKEY=YOURAPIKEY
-
-**Do NOT include the numbers 1 or 2. Put each field on its own line, and ensure no spaces between the equal sign, before the key, and after the value.**
-
+**You must supply your own VirusTotal key in your own .env file.**
 Ensure the VirusTotal API is working by running Mode C, and select option C from the menu. 
 For more information, please visit: https://docs.virustotal.com/docs/api-overview. 
 
@@ -25,6 +27,9 @@ To receive notifications from the app in Discord, please follow these steps:
 7. In the **.env** file, add this: WEBHOOK=yourdiscordwebhook and save.
 8. Ensure the webhook is working by running Mode C, and select option B from the menu.
 9. After verification is successful, you are done!
+
+**Azure Storage Blobs Setup**
+NOT COMPLETE, TBA.
 ------------------------------------------------------------------------------------------------
 ### Language 
 This project is being made with **Python 3.12.1**, and as such uses tools and frameworks connected to Python. 
@@ -86,8 +91,10 @@ From here, you will be prompted to select an option from a menu, please type the
 **D. Set Alert Preferences**
 
 **E. Exit the Menu**
+### Hashing Files On The Cloud and Checking Intregrity Of Files On The Cloud, MODE D.
+TBA
 
 -----------------------------------------------------------------------------------------------
 ## Miscellaneous
 At this stage of the project, I cannot make any promises that all features I intend to add will be able to be done. If this is the case, this ReadMe.md will be updated accordingly. This tool is for diagnostic purposes only and does not provide data recovery services. If data loss or corruption is detected, users should rely on their established backup restoration procedures or professional data recovery services. Thank you! 
-### **LAST UPDATED: July 31st, 2026.**
+### **LAST UPDATED: August 4th, 2026.**
