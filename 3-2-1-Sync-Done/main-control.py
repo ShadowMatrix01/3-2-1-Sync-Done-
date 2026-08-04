@@ -3,9 +3,11 @@ import argparse #Needed for cmd to ensure user is given choice
 #between full and partial backup.
 import os
 from dotenv import load_dotenv
-import json
 import ijson #Because otherwise, retrieving the file from manifest would be too inefficient.
 import logging
+import hashlib
+from azure.storage.blob import BlobClient, ContainerClient, BlobServiceClient
+from azure.core.exceptions import HttpResponseError
 from datetime import datetime
 from hashHOT import hash256_caller
 from json_control import json_writer, hash_compare, load_manifest
@@ -21,8 +23,60 @@ write_now = False
 vt_check = False
 local_notif = False
 webhook_notif = False
-EXCLUDED = ["manifest.json", "loginfo.log", "manifest2.json", "VT_check.log", "VT_online_check.py"]
-logging.basicConfig(level=logging.WARNING, filename='loginfo.log', format='%(asctime)s - %(levelname)s: %(message)s')
+EXCLUDED = ["manifest.json", "loginfo.log", "manifest2.json", "manifest3.json", "cloudlog.log", "VT_check.log", "VT_online_check.py"]
+def download_blob():
+    global buffer_arr
+    buffer_arr = {}
+    azure_connection_string = os.getenv("AZURE_CONNECT_STR")
+    azure_container_name = os.getenv("AZURE_CONTAINER")
+    if azure_connection_string is None:
+       print("Error: AZURE_CONNECT_STR not found. Please create a .env file based on .env.example")
+       return
+    if not azure_container_name:
+       print("Error: AZURE_CONTAINER not found. Please create a .env file based on .env.example")
+       return
+    try:
+         blob_service_client = BlobServiceClient.from_connection_string(azure_connection_string)
+         container_client = blob_service_client.get_container_client(container=azure_container_name)
+         blob_list = container_client.list_blobs()
+         for blob in blob_list:
+            blob_name = blob.name
+            modified = blob.last_modified
+            file_size = blob.size
+            sha256 = hashlib.sha256()  
+            try:
+                  blob_client = container_client.get_blob_client(blob_name)
+                  stream_data = blob_client.download_blob()
+                  with tqdm(total=stream_data.size, desc="Hashing file(s) from the cloud", colour="yellow", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:
+                        for chunk in stream_data.chunks():
+                           sha256.update(chunk)
+                           pbar.update(len(chunk))
+                  file_hash = sha256.hexdigest()
+                  if (blob_name and file_hash) and blob_name not in EXCLUDED:
+                           buffer_arr[blob_name] = {
+                                       "hash": file_hash,
+                                       "last_seen": datetime.now().isoformat(),
+                                       "mtime": round(modified.timestamp(), 4) if modified else None, #Was giving me typerrors of JSON, so wrapped
+                                       "size": file_size
+                           }
+                  if ((len(buffer_arr) % BATCH_SIZE == 0) or write_now) and buffer_arr: #Prevents edge case that was happening during testing.
+                        json_writer(buffer_arr, "manifest3.json")
+                        buffer_arr = {} 
+            except HttpResponseError as e:
+                print(f"Azure HTTP Error {e.status_code} on file {blob_name}: {e.message}")
+                logging.error(f"Azure HTTP Error {e.status_code} on {blob_name}: {e}")                  
+                #https://pypi.org/project/azure-storage-blob/
+                #https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blobs-list-python
+                #https://learn.microsoft.com/en-us/python/api/azure-core/azure.core.exceptions?view=azure-python
+                #https://learn.microsoft.com/en-us/python/api/azure-storage-blob/azure.storage.blob.storagestreamdownloader?view=azure-python#azure-storage-blob-storagestreamdownloader-download-to-stream
+    except HttpResponseError as e:
+        print(f"Azure Container Error: {e.status_code}: {e.message}")
+        logging.error(f"Azure Container Error: {e.status_code}: {e}")
+    except Exception as e:
+        print(f"Unexpected Azure Error: {e}")
+        logging.error(f"Unexpected Azure Error: {e}")
+    if buffer_arr:
+       json_writer(buffer_arr, "manifest3.json")
 def validate(): #Because otherwise, invalid json would be accepted, so it is checked before anything.
     setup = alert_preferences("main-control")
     if not setup:
@@ -31,9 +85,11 @@ def validate(): #Because otherwise, invalid json would be accepted, so it is che
     global local_notif
     global webhook_notif
     global vt_check
+    global azure_cloud_hash
     vt_check = VT_check("main-control")
     local_notif = local_notification_check("main-control")
     webhook_notif = webhook_check("main-control")
+    #For now, this is left empty, but I will add way to verify cloud is working.
 def argCV():
     #Command Line Interface CLI, similar to C which makes sense.
     #considering python is an interpreted language.
@@ -165,11 +221,16 @@ def manifest_updater(file_path, hash_calc, write_now, which_one):
         if which_one == "source":
            json_writer(buffer_arr,"manifest.json")
         else:
-           json_writer(buffer_arr,"manifest2.json")  
+           json_writer(buffer_arr,"manifest2.json")
+        buffer_arr = {}  
 argv = argCV()
-if argv.source == " " and not argv.mode == "C":
-   print("ERROR: An empty string " " was provided. This is only allowed for mode C.")
+if argv.source == " " and not (argv.mode == "C" or argv.mode =="D"):
+   print("ERROR: An empty string " " was provided. This is only allowed for mode C and mode D.")
    exit()
+log_file = "cloudlog.log" if argv.mode == "D" else "loginfo.log" #I have to rework
+#the log in json_control, to avoid it being written to the main log, and also condense it since the log is way too big for
+#this
+logging.basicConfig(level=logging.WARNING, filename=log_file, format='%(asctime)s - %(levelname)s: %(message)s')
 if argv.mode == "A":
    validate()
    print("Please wait while the program discovers the total number of files in the directory(s)...")
@@ -196,6 +257,9 @@ elif (argv.mode == "1B" or argv.mode == "2B") and not argv.source2:
      check_if_file_exists(argv.source, manifest)
 elif argv.mode == "C":
      main_menu("notify")
+elif argv.mode == "D":
+     #validate()
+     download_blob()
 else:
     if not argv.source2:
        print(f"{argv.mode} is not a valid mode. Please try again.")

@@ -199,6 +199,7 @@ def VT_check(program):
        hash = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f" #A SHA-256 hash of a known safe virus.
        base_url = os.getenv("URL")
        api_key = os.getenv("APIKEY")
+       url = urlparse(base_url)
        if not api_key:
            if program == "notify":
               print("Error: APIKEY not found. Please create a .env file based on .env.example")
@@ -208,7 +209,7 @@ def VT_check(program):
               print("The program will run in 5 seconds, but checking the hash with VirusTotal API will be disabled.")  
               time.sleep(2);
               return False
-       if not base_url:
+       if not base_url or not url.scheme or not url.netloc:
            if program == "notify":
               print("Error: URL not found. Please create a .env file based on .env.example")
               exit() 
