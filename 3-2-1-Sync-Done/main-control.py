@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 import ijson #Because otherwise, retrieving the file from manifest would be too inefficient.
 import logging
 import hashlib
+import json
+import time
 from azure.storage.blob import BlobClient, ContainerClient, BlobServiceClient
 from azure.core.exceptions import HttpResponseError
 from datetime import datetime
@@ -18,12 +20,11 @@ from plyer import notification
 load_dotenv()
 BATCH_SIZE = 4096 #Constant, because the amount of IO operations was slowing down the project by a lot.
 buffer_arr = {}
-seen_and_banned = {}
 write_now = False
 vt_check = False
 local_notif = False
 webhook_notif = False
-EXCLUDED = ["manifest.json", "loginfo.log", "manifest2.json", "manifest3.json", "cloudlog.log", "VT_check.log", "VT_online_check.py"]
+EXCLUDED = ["manifest.json", "manifest2.json", "manifest_cloud.json", "manifest.log", "manifest2.log", "manifest_cloud.log", "VT_check.log", "VT_online_check.py"]
 def download_blob():
     global buffer_arr
     buffer_arr = {}
@@ -60,7 +61,7 @@ def download_blob():
                                        "size": file_size
                            }
                   if ((len(buffer_arr) % BATCH_SIZE == 0) or write_now) and buffer_arr: #Prevents edge case that was happening during testing.
-                        json_writer(buffer_arr, "manifest3.json")
+                        json_writer(buffer_arr, "manifest_cloud.json")
                         buffer_arr = {} 
             except HttpResponseError as e:
                 print(f"Azure HTTP Error {e.status_code} on file {blob_name}: {e.message}")
@@ -69,14 +70,18 @@ def download_blob():
                 #https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blobs-list-python
                 #https://learn.microsoft.com/en-us/python/api/azure-core/azure.core.exceptions?view=azure-python
                 #https://learn.microsoft.com/en-us/python/api/azure-storage-blob/azure.storage.blob.storagestreamdownloader?view=azure-python#azure-storage-blob-storagestreamdownloader-download-to-stream
+         if buffer_arr:
+            json_writer(buffer_arr, "manifest_cloud.json")
+         with open('cloud_manifest.json', 'r') as file:
+              info = json.load(file)
+              count = len(info)
+         logging.info(f"Successfully updated manifest_cloud.json with {count} entries.")
     except HttpResponseError as e:
         print(f"Azure Container Error: {e.status_code}: {e.message}")
         logging.error(f"Azure Container Error: {e.status_code}: {e}")
     except Exception as e:
         print(f"Unexpected Azure Error: {e}")
         logging.error(f"Unexpected Azure Error: {e}")
-    if buffer_arr:
-       json_writer(buffer_arr, "manifest3.json")
 def validate(): #Because otherwise, invalid json would be accepted, so it is checked before anything.
     setup = alert_preferences("main-control")
     if not setup:
@@ -89,7 +94,38 @@ def validate(): #Because otherwise, invalid json would be accepted, so it is che
     vt_check = VT_check("main-control")
     local_notif = local_notification_check("main-control")
     webhook_notif = webhook_check("main-control")
-    #For now, this is left empty, but I will add way to verify cloud is working.
+    if not os.path.exists("manifest.json") or os.path.getsize("manifest.json") == 0: 
+       create_manifest("manifest.json")
+    if not os.path.exists("manifest2.json") or os.path.getsize("manifest2.json") == 0: 
+       create_manifest("manifest2.json") 
+    if not os.path.exists("manifest_cloud.json") or os.path.getsize("manifest_cloud.json") == 0: 
+       create_manifest("manifest_cloud.json")
+    for i in range(1, 4):
+        if i == 1:
+           file = "manifest.json"
+        elif i == 2:
+           file = "manifest2.json"
+        else:
+           file = "manifest_cloud.json"
+        try:
+            with open(file, 'r') as f:
+                 json.load(f)
+        except ijson.common.IncompleteJSONError:
+            logging.basicConfig(level=logging.INFO, filename="loginfo.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+            print(f"ERROR! The manifest file {file} is corrupted. You must manually check it, as the program will not run to avoid overwriting this data.")
+            print(f"This program will exit in 5 seconds for security reasons.")
+            time.sleep(5)
+            exit()
+        except Exception as e:
+             logging.basicConfig(level=logging.INFO, filename="loginfo.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+             print(f"ERROR! The manifest file {file} is corrupted. You must manually check it, as the program will not run to avoid overwriting this data.")
+             print(f"This program will exit in 5 seconds for security reasons.")
+             time.sleep(5)
+             exit()
+    #For now, this is l5)
+def create_manifest(path):
+    with open(path, "w") as f:
+         json.dump({}, f)
 def argCV():
     #Command Line Interface CLI, similar to C which makes sense.
     #considering python is an interpreted language.
@@ -104,21 +140,25 @@ def argCV():
     return arg.parse_args()
 def retrieve_file(target_path, manifest_data):
     if not os.path.exists(manifest_data) or os.path.getsize(manifest_data) == 0:
-        print(f"Error: The manifest file '{manifest_data}' is empty or does not exist. Please create it manually.")
-        return None
+        print(f"Error: The manifest file '{manifest_data}' is empty or does not exist. Exiting program")
+        exit()
     path = os.path.abspath(target_path)
     try:
       with open(manifest_data, 'rb') as f:
             for file_path, info in ijson.kvitems(f, ''):
                if file_path == path:
                   return info
+               else:
+                  return None
     except ijson.common.IncompleteJSONError:
-        print(f"Error: The manifest '{manifest_data}' contains invalid or incomplete JSON. Please check the manifest manually.")
-        logging.error(f"{manifest_data} is invalid or incomplete JSON.Please check the manifest manually.")
-        return None
-    return None
-    #https://pypi.org/project/ijson/
+        print(f"ERROR! The manifest file {manifest_data} is corrupted. You must manually check it, as the program will not run to avoid overwriting this data.")
+        print(f"This program will exit in 5 seconds for security reasons.")
+        time.sleep(5)
+        exit()
+        #https://pypi.org/project/ijson/
 def check_if_file_exists(file_path, manifest_data):
+    #This will be redone, because logically it is inconsistent as the not os.path.exists logic cant be reached.
+    #I will do this in the next coming updates.
     check = retrieve_file(file_path, manifest_data)
     if not check:
        print(f"Sorry, but {file_path} was not found in {manifest_data}")
@@ -134,7 +174,7 @@ def check_if_file_exists(file_path, manifest_data):
     else:
        print(f"ALERT! {file_path} has been modified or corrupted since it was last seen!")
        logging.warning(f"{file_path} has been modified or corrupted since it was last seen.")
-def total_files(directory, extension):
+def total_size(directory, extension):
     count = 0
     for root, dirs, files in os.walk(directory):
         for file in files:
@@ -142,16 +182,16 @@ def total_files(directory, extension):
                 continue
             if file in EXCLUDED:
                 continue
-            count += 1
+            #Unlike my previous way, this now shows the progress bar moving according to the size of the directory.
+            filepath = os.path.join(root, file)
+            count += os.path.getsize(filepath)
     return count
-def source_updater(root, files, pbar, manifest_data, this_one):
-    global seen_and_banned
+def source_updater(root, files, pbar, manifest_name, manifest_data, this_one): #I added this because I didnt like how
+    #before the log accumulated all errors, so now logging is specific to the given manifest file.
     for file in files:
         if argv.ext and not file.endswith(argv.ext):
            continue
         if os.path.basename(file) in EXCLUDED:
-           continue
-        if file in seen_and_banned:
            continue
         file_path = os.path.normpath(os.path.join(root, file))
         try:
@@ -163,7 +203,7 @@ def source_updater(root, files, pbar, manifest_data, this_one):
         if file_path in manifest_data:
            data = manifest_data[file_path]
            if data.get("mtime") == cur_mtime and data.get("size") == cur_size:
-              pbar.update(1)
+              pbar.update(cur_size)
               continue
         hash_calc = hash256_caller(file_path)
         if hash_calc:
@@ -193,7 +233,7 @@ def source_updater(root, files, pbar, manifest_data, this_one):
                         online_check(hash_calc, file_path, pbar, local_notif, webhook_notif)
                         break
                      elif sel == "EXIT":
-                        pbar.write("\n\nProgram quitting for data integrity purposes. Please check manifest.json and loginfo.log")
+                        pbar.write(f"\n\nProgram quitting for data integrity purposes. Please check {manifest_name}.log")
                         exit()
                      else:
                         if sel == "CONVT" and not vt_check:
@@ -204,9 +244,8 @@ def source_updater(root, files, pbar, manifest_data, this_one):
            elif "same" in status:
                 manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
         else:
-          pbar.write(f"FAILURE: The following file {file} could not be hashed. Check loginfo.log for information.")  
-          seen_and_banned[file_path] = None
-        pbar.update(1)
+          pbar.write(f"FAILURE: The following file {file} could not be hashed. Please check {manifest_name}.log for information.")  
+        pbar.update(cur_size)
 def manifest_updater(file_path, hash_calc, write_now, which_one):
     global buffer_arr #Global because buffer_arr needs to be accessed globally.
     if (file_path and hash_calc) and os.path.basename(file_path) not in EXCLUDED:
@@ -227,38 +266,49 @@ argv = argCV()
 if argv.source == " " and not (argv.mode == "C" or argv.mode =="D"):
    print("ERROR: An empty string " " was provided. This is only allowed for mode C and mode D.")
    exit()
-log_file = "cloudlog.log" if argv.mode == "D" else "loginfo.log" #I have to rework
-#the log in json_control, to avoid it being written to the main log, and also condense it since the log is way too big for
-#this
-logging.basicConfig(level=logging.WARNING, filename=log_file, format='%(asctime)s - %(levelname)s: %(message)s')
 if argv.mode == "A":
+   logging.basicConfig(level=logging.INFO, filename="manifest.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+   #Using force, I was able to get the program to force logging correctly, because the logger ignores this unless its forced.
    validate()
-   print("Please wait while the program discovers the total number of files in the directory(s)...")
-   total = total_files(argv.source, argv.ext)
+   print("Please wait while the program discovers the total size of the directory in bytes...")
+   total = total_size(argv.source, argv.ext)
    manifest_source = load_manifest("manifest.json")
-   with tqdm(total=total, desc="Hashing files, please wait", colour="green") as pbar:
+   with tqdm(total=total, desc="Hashing files, please wait", colour="green", unit="B", unit_scale=True, unit_divisor=1024) as pbar:
          for root, dirs, files in os.walk(argv.source):
-            source_updater(root, files, pbar, manifest_data=manifest_source, this_one="source")
+            source_updater(root, files, pbar, manifest_name="manifest", manifest_data=manifest_source, this_one="source")
    manifest_updater(None, None, write_now=True, which_one="source")
+   with open('manifest.json', 'r') as file:
+                 info = json.load(file)
+                 count = len(info)
+   logging.info(f"Successfully updated manifest.json with {count} entries.")
    if argv.source2: #Because it would crash, for obvious reasons.
+      logging.basicConfig(level=logging.INFO, filename="manifest2.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
       buffer_arr = {}
+      print("Please wait while the program discovers the total size of the second directory in bytes...")
+      total = total_size(argv.source2, argv.ext)
       manifest_target = load_manifest("manifest2.json")
-      total = total_files(argv.source2, argv.ext)
-      with tqdm(total=total, desc="Hashing second batch of files, please wait", colour="blue") as pbar:
+      with tqdm(total=total, desc="Hashing second batch of files, please wait", colour="blue", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:
          for root, dirs, files in os.walk(argv.source2):
-            source_updater(root, files, pbar, manifest_data=manifest_target, this_one="target")
+            source_updater(root, files, pbar, manifest_name="manifest2", manifest_data=manifest_target, this_one="target")
       manifest_updater(None, None, write_now=True, which_one="target")
+      with open('manifest2.json', 'r') as file:
+                    info = json.load(file)
+                    count = len(info)
+      logging.info(f"Successfully updated manifest2.json with {count} entries.")
 elif (argv.mode == "1B" or argv.mode == "2B") and not argv.source2:
      validate()
      if argv.mode == "1B":
+        logging.basicConfig(level=logging.INFO, filename="manifest.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
         manifest = "manifest.json"
      else:
+        logging.basicConfig(level=logging.INFO, filename="manifest2.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
         manifest = "manifest2.json"
      check_if_file_exists(argv.source, manifest)
 elif argv.mode == "C":
      main_menu("notify")
 elif argv.mode == "D":
-     #validate()
+     logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+     validate()
      download_blob()
 else:
     if not argv.source2:
