@@ -26,10 +26,11 @@ def json_writer(hash, path):
      list.update(hash)
      with open(path, "w") as f:
         json.dump(list, f, indent=4)
-     logging.info(f"Successfully updated {path} with {len(hash)} entries.")
   else:
-    print(f"{path} does not exist, please create file manually!")
-    logging.error(f"{path} does not exist, please create file manually!")
+    print(f"{path} does not exist, creating {path} and exiting program.")
+    logging.error(f"{path} does not exist, creating {path}! and exiting program")
+    with open(path, "w") as f:
+         json.dump({}, f)
     exit()
 def hash_compare(file_path, current_hash, manifest_data):
     if file_path not in manifest_data:
