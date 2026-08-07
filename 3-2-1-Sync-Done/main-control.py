@@ -25,7 +25,7 @@ vt_check = False
 local_notif = False
 webhook_notif = False
 EXCLUDED = ["manifest.json", "manifest2.json", "manifest_cloud.json", "manifest.log", "manifest2.log", "manifest_cloud.log", "VT_check.log", "VT_online_check.py"]
-def download_blob():
+def download_blob(extension, manifest_data):
     global buffer_arr
     buffer_arr = {}
     azure_connection_string = os.getenv("AZURE_CONNECT_STR")
@@ -44,11 +44,31 @@ def download_blob():
             blob_name = blob.name
             modified = blob.last_modified
             file_size = blob.size
-            sha256 = hashlib.sha256()  
+            sha256 = hashlib.sha256() 
+            if blob_name in EXCLUDED:
+               continue 
+            if extension is not None and not blob_name.endswith(extension):
+               continue
             try:
+                  if blob_name in manifest_data:    
+                     data = manifest_data[blob_name]
+                     mtime = data.get("mtime")
+                     cur_mtime = round(modified.timestamp(), 4) if modified else None
+                     if mtime == cur_mtime and data.get("size") == file_size:
+                        buffer_arr[blob_name] = {
+                            "hash": data.get("hash"),
+                            "last_seen": datetime.now().isoformat(),
+                            "mtime": round(modified.timestamp(), 4) if modified else None, #Was giving me typerrors of JSON, so wrapped
+                            "size": file_size
+                        }
+                        if (len(buffer_arr) % BATCH_SIZE == 0) and buffer_arr: #added here because I realized it is theoretically possible that over 4096 files that have already
+                            #been hashed with no modification can be in the buffer array, and I don't want a memory leak or the program to crash.
+                            json_writer(buffer_arr, "manifest_cloud.json")
+                            buffer_arr = {}
+                        continue
                   blob_client = container_client.get_blob_client(blob_name)
                   stream_data = blob_client.download_blob()
-                  with tqdm(total=stream_data.size, desc="Hashing file(s) from the cloud", colour="yellow", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:
+                  with tqdm(total=stream_data.size, desc="Hashing file(s) from the cloud", colour="magenta", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:
                         for chunk in stream_data.chunks():
                            sha256.update(chunk)
                            pbar.update(len(chunk))
@@ -72,7 +92,7 @@ def download_blob():
                 #https://learn.microsoft.com/en-us/python/api/azure-storage-blob/azure.storage.blob.storagestreamdownloader?view=azure-python#azure-storage-blob-storagestreamdownloader-download-to-stream
          if buffer_arr:
             json_writer(buffer_arr, "manifest_cloud.json")
-         with open('cloud_manifest.json', 'r') as file:
+         with open('manifest_cloud.json', 'r') as file:
               info = json.load(file)
               count = len(info)
          logging.info(f"Successfully updated manifest_cloud.json with {count} entries.")
@@ -149,7 +169,8 @@ def retrieve_file(target_path, manifest_data):
                if file_path == path:
                   return info
                else:
-                  return None
+                  continue #I fixed it, I accidently had a return statement here from the inital construction of the program.
+            return None
     except ijson.common.IncompleteJSONError:
         print(f"ERROR! The manifest file {manifest_data} is corrupted. You must manually check it, as the program will not run to avoid overwriting this data.")
         print(f"This program will exit in 5 seconds for security reasons.")
@@ -157,8 +178,7 @@ def retrieve_file(target_path, manifest_data):
         exit()
         #https://pypi.org/project/ijson/
 def check_if_file_exists(file_path, manifest_data):
-    #This will be redone, because logically it is inconsistent as the not os.path.exists logic cant be reached.
-    #I will do this in the next coming updates.
+    #Redone, as I promised before. In the retrieve function itself.
     check = retrieve_file(file_path, manifest_data)
     if not check:
        print(f"Sorry, but {file_path} was not found in {manifest_data}")
@@ -170,7 +190,16 @@ def check_if_file_exists(file_path, manifest_data):
        return
     hash = hash256_caller(file_path)
     if hash == check['hash']:
-       print(f"The file {file_path} was successfully verified. No changes have been detected from the manifest.") 
+       print(f"The file {file_path} was successfully verified. No changes have been detected from the manifest.")
+       global buffer_arr #Global because buffer_arr needs to be accessed globally.
+       stat = os.stat(file_path) #Just like C, with stat.
+       buffer_arr[file_path] = {
+               "hash": hash,
+               "last_seen": datetime.now().isoformat(),
+               "mtime": round(stat.st_mtime, 4), 
+               "size": stat.st_size
+         }
+       json_writer(buffer_arr, manifest_data) 
     else:
        print(f"ALERT! {file_path} has been modified or corrupted since it was last seen!")
        logging.warning(f"{file_path} has been modified or corrupted since it was last seen.")
@@ -308,8 +337,13 @@ elif argv.mode == "C":
      main_menu("notify")
 elif argv.mode == "D":
      logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+     #I added this because the logging was excessive by default, so now only actual errors, not standard http request information will show up.
+     logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+     logging.getLogger("azure.core.pipeline.transport").setLevel(logging.WARNING)
+     #https://stackoverflow.com/questions/52051501/azure-blob-storage-sdk-switch-off-logging
      validate()
-     download_blob()
+     manifest_target = load_manifest("manifest_cloud.json")
+     download_blob(argv.ext, manifest_target)
 else:
     if not argv.source2:
        print(f"{argv.mode} is not a valid mode. Please try again.")
