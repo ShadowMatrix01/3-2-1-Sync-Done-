@@ -8,6 +8,8 @@ import logging
 import hashlib
 import json
 import time
+import schedule
+from pytz import timezone
 from azure.storage.blob import BlobClient, ContainerClient, BlobServiceClient
 from azure.core.exceptions import HttpResponseError
 from datetime import datetime
@@ -24,7 +26,7 @@ write_now = False
 vt_check = False
 local_notif = False
 webhook_notif = False
-EXCLUDED = ["manifest.json", "manifest2.json", "manifest_cloud.json", "manifest.log", "manifest2.log", "manifest_cloud.log", "VT_check.log", "VT_online_check.py"]
+EXCLUDED = ["manifest.json", "manifest2.json", "manifest_cloud.json", "manifest.log", "manifest2.log", "manifest_cloud.log", "VT_check.log", "VT_online_check.py"]     
 def download_blob(extension, manifest_data):
     global buffer_arr
     buffer_arr = {}
@@ -41,6 +43,7 @@ def download_blob(extension, manifest_data):
          container_client = blob_service_client.get_container_client(container=azure_container_name)
          blob_list = container_client.list_blobs()
          for blob in blob_list:
+            move_on = False
             blob_name = blob.name
             modified = blob.last_modified
             file_size = blob.size
@@ -50,25 +53,78 @@ def download_blob(extension, manifest_data):
             if extension is not None and not blob_name.endswith(extension):
                continue
             try:
-                  if blob_name in manifest_data:    
-                     data = manifest_data[blob_name]
-                     mtime = data.get("mtime")
-                     cur_mtime = round(modified.timestamp(), 4) if modified else None
-                     if mtime == cur_mtime and data.get("size") == file_size:
-                        buffer_arr[blob_name] = {
-                            "hash": data.get("hash"),
-                            "last_seen": datetime.now().isoformat(),
-                            "mtime": round(modified.timestamp(), 4) if modified else None, #Was giving me typerrors of JSON, so wrapped
-                            "size": file_size
-                        }
-                        if (len(buffer_arr) % BATCH_SIZE == 0) and buffer_arr: #added here because I realized it is theoretically possible that over 4096 files that have already
-                            #been hashed with no modification can be in the buffer array, and I don't want a memory leak or the program to crash.
-                            json_writer(buffer_arr, "manifest_cloud.json")
-                            buffer_arr = {}
-                        continue
+                  if blob_name in manifest_data:
+                     with tqdm(total=file_size, desc=f"Verifying blob {blob_name} from cloud vs local", colour="magenta", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:                    
+                              data = manifest_data[blob_name]
+                              mtime = data.get("mtime")
+                              cur_mtime = round(modified.timestamp(), 4) if modified else None
+                              if mtime == cur_mtime and data.get("size") == file_size:
+                                 buffer_arr[blob_name] = {
+                                    "hash": data.get("hash"),
+                                    "last_seen": datetime.now().isoformat(),
+                                    "mtime": cur_mtime,
+                                    "size": file_size
+                                 }
+                                 if (len(buffer_arr) % BATCH_SIZE == 0) and buffer_arr: #added here because I realized it is theoretically possible that over 4096 files that have already
+                                    #been hashed with no modification can be in the buffer array, and I don't want a memory leak or the program to crash.
+                                    json_writer(buffer_arr, "manifest_cloud.json")
+                                    buffer_arr = {}
+                                 pbar.update(file_size)
+                                 continue
+                              else:
+                                 if local_notif:
+                                    try:
+                                       notification.notify(
+                                             title="Corrupted File Warning!",
+                                             message=f"{blob_name} has been changed or is corrupted, please select an option in the program!",
+                                             app_name="3-2-1-Sync-Done!",
+                                             timeout=5
+                                       )
+                                    except Exception:
+                                       pass           
+                                 pbar.write(f"\n\nWARNING! The blob {blob_name} has been changed or corrupted!")
+                                 while True:
+                                       sel = input("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ").strip().upper()
+                                       if sel == "CON":
+                                          blob_client = container_client.get_blob_client(blob_name)
+                                          stream_data = blob_client.download_blob()
+                                          for chunk in stream_data.chunks():
+                                              sha256.update(chunk)
+                                              pbar.update(len(chunk))
+                                          file_hash = sha256.hexdigest()
+                                          if (blob_name and file_hash) and blob_name not in EXCLUDED:
+                                             buffer_arr[blob_name] = {
+                                             "hash": file_hash,
+                                             "last_seen": datetime.now().isoformat(),
+                                             "mtime": cur_mtime,
+                                             "size": file_size
+                                          }
+                                          json_writer(buffer_arr, "manifest_cloud.json")
+                                          buffer_arr = {} 
+                                          pbar.write("\n\nManifest has been updated, continuing program operation.")
+                                          move_on = True
+                                          break
+                                       elif sel == "CONVT" and vt_check:
+                                          pbar.write("\n\nPlease wait while the program checks the global virus database...")
+                                          #I have to figure out how exactly to handle a corrupted file, since azure does not have a native move
+                                          #feature, and I also need to upload the specific virus log to the container.
+                                          move_on = True
+                                          pbar.update(file_size)
+                                          break
+                                       elif sel == "EXIT":
+                                          pbar.write(f"\n\nProgram quitting for data integrity purposes. Please check manifest_cloud.log")
+                                          exit()
+                                       else:
+                                          if sel == "CONVT" and not vt_check:
+                                             pbar.write("\n\nPlease enable VT check in .env, and please run mode C for setup validation.")
+                                          else:
+                                             pbar.write("\n\nInvalid input. Please try again.")
+                                          continue
+                  if move_on: #Added because it should not rehash the file if the user has already gone through the process.
+                     continue   
                   blob_client = container_client.get_blob_client(blob_name)
                   stream_data = blob_client.download_blob()
-                  with tqdm(total=stream_data.size, desc="Hashing file(s) from the cloud", colour="magenta", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:
+                  with tqdm(total=stream_data.size, desc=f"Hashing file {blob_name} from the cloud", colour="magenta", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:
                         for chunk in stream_data.chunks():
                            sha256.update(chunk)
                            pbar.update(len(chunk))
@@ -288,8 +344,10 @@ def manifest_updater(file_path, hash_calc, write_now, which_one):
     if ((len(buffer_arr) % BATCH_SIZE == 0) or write_now) and buffer_arr: #Prevents edge case that was happening during testing.
         if which_one == "source":
            json_writer(buffer_arr,"manifest.json")
-        else:
+        elif which_one == "target":
            json_writer(buffer_arr,"manifest2.json")
+        else:
+           json_writer(buffer_arr,"manifest_cloud.json")
         buffer_arr = {}  
 argv = argCV()
 if argv.source == " " and not (argv.mode == "C" or argv.mode =="D"):
@@ -352,3 +410,8 @@ else:
 #os.walk(): https://www.w3schools.com/python/ref_os_walk.asp
 #shebang: https://realpython.com/python-shebang/ 
 #Progress barhttps://tqdm.github.io/
+
+#The bottom three will be implemented in the next coming updates.
+#Scheduler: https://pypi.org/project/schedule/
+#timezone: https://schedule.readthedocs.io/en/stable/timezones.html
+#https://stackoverflow.com/questions/3489183/how-can-i-get-a-human-readable-timezone-name-in-python
