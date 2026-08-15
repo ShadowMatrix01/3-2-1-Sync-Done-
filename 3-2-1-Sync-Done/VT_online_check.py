@@ -5,6 +5,7 @@ import requests
 import json
 import chime
 import shutil #Added so the user can copy files from one location to another. 
+import time
 from datetime import datetime
 from plyer import notification #now synchronous with plyer.
 from discord_webhook import DiscordWebhook,  DiscordEmbed
@@ -52,7 +53,7 @@ def suspicious_file_log(file, response, dest):
         time = datetime.now().isoformat()
         f.write(f"{file} was marked as suspicious on {time}. \nResponse from VT: {response}") 
         json.dump(response, f, indent=4)
-def online_check(hash, file, pbar, local_notif, webhook_notif):
+def online_check(hash, file, pbar, local_notif, webhook_notif, version):
     base_url = os.getenv("URL")
     api_key = os.getenv("APIKEY")
     if not api_key:
@@ -65,18 +66,32 @@ def online_check(hash, file, pbar, local_notif, webhook_notif):
     headers = {"accept": "application/json", #VT's docs says this is the way, which is different.
                 "x-apikey": api_key}
     try:
-        response = requests.get(full_url, headers=headers)
-        if response.status_code == 429:
-            pbar.write("Rate limit reached. Please wait a moment.")
-            return
+        rate_count = 0
+        while True:
+            response = requests.get(full_url, headers=headers)
+            if response.status_code == 429 and rate_count < 4:
+                for i in reversed(range(21)):
+                    pbar.write(f"Attempt {rate_count + 1}/4: Rate limit reached. Please wait {i} seconds")
+                    time.sleep(1)
+                rate_count = rate_count + 1
+                continue
+            else:
+                break
+        if rate_count == 4:
+            return "rate"  
+        if response.status_code == 404:
+           pbar.write(f"This file/blob {file} has not been seen on the VirusTotal database. Continuing program operation...")
+           return "likely_safe"
         response.raise_for_status() #https://stackoverflow.com/questions/61463224/when-to-use-raise-for-status-vs-status-code-testing
-        malicious(response.json(), file, pbar, local_notif, webhook_notif)
+        malicious(response.json(), file, pbar, local_notif, webhook_notif, version)
     except requests.exceptions.RequestException as e:
         pbar.write(f"API Error: {e}")
-def malicious(response_info, file, pbar, local_notif, webhook_notif):
+def malicious(response_info, file, pbar, local_notif, webhook_notif, vers):
     if isinstance(response_info, str): #If string, then it is an error code.
        pbar.write(f"An error was encountered: {response_info}")
-       return
+       logging.basicConfig(level=logging.WARNING, filename='VT_check.log', format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+       logging.error(f"An error was encountered: {response_info}")
+       return "error"
     info = response_info.get("data",{}).get("attributes", {}).get("last_analysis_stats",{})
     count = info.get("malicious", 0)
     if count > 5:
@@ -84,7 +99,10 @@ def malicious(response_info, file, pbar, local_notif, webhook_notif):
           virus_local(file, count)
        if webhook_notif:
           virus_webhook(file, count)
-       quarantine_file(file, count, response_info, pbar)
+       if vers == "local":
+          quarantine_file(file, count, response_info, pbar)
+       elif vers == "online":
+          quarantine_file_cloud(file, count, response_info, pbar)
 def quarantine_file(suspicious_file, count, resp, pbar):
     quarantine_dir = "quarantine"
     os.makedirs(quarantine_dir, exist_ok=True)
@@ -101,16 +119,21 @@ def quarantine_file(suspicious_file, count, resp, pbar):
                 suspicious_file_log(suspicious_file, resp, dst)
                 shutil.move(suspicious_file, dst)
                 pbar.write("File has succesfully been moved to quarantine.")
-                break
+                return "handled"
             except PermissionError:
                 pbar.write("FAILURE: Program lacks permissions to move this file to quarantine. Aborting move.")
+                continue
             except shutil.Error as e:
                 pbar.write(f"ERROR: {e}")
+                continue
             except OSError as e: 
                 pbar.write(f"ERROR: {e}")
+                continue
         elif move == "N":
-            pbar.write("File remains in place, no further action taken.")
-            break
+            pbar.write("File remains in place, no further action taken. Continuing program operation...")
+            return "likely_safe"
         else:
             pbar.write("Invalid input, please try again.")
             continue
+def quarantine_file_cloud(blob, count, resp, pbar):
+    return "handled"

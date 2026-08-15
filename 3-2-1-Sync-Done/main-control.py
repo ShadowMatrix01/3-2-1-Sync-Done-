@@ -28,8 +28,6 @@ local_notif = False
 webhook_notif = False
 EXCLUDED = ["manifest.json", "manifest2.json", "manifest_cloud.json", "manifest.log", "manifest2.log", "manifest_cloud.log", "VT_check.log", "VT_online_check.py"]     
 def download_blob(extension, manifest_data):
-    global buffer_arr
-    buffer_arr = {}
     azure_connection_string = os.getenv("AZURE_CONNECT_STR")
     azure_container_name = os.getenv("AZURE_CONTAINER")
     if azure_connection_string is None:
@@ -46,6 +44,7 @@ def download_blob(extension, manifest_data):
             move_on = False
             blob_name = blob.name
             modified = blob.last_modified
+            cur_mtime = round(modified.timestamp(), 4) if modified else None
             file_size = blob.size
             sha256 = hashlib.sha256() 
             if blob_name in EXCLUDED:
@@ -57,18 +56,9 @@ def download_blob(extension, manifest_data):
                      with tqdm(total=file_size, desc=f"Verifying blob {blob_name} from cloud vs local", colour="magenta", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:                    
                               data = manifest_data[blob_name]
                               mtime = data.get("mtime")
-                              cur_mtime = round(modified.timestamp(), 4) if modified else None
                               if mtime == cur_mtime and data.get("size") == file_size:
-                                 buffer_arr[blob_name] = {
-                                    "hash": data.get("hash"),
-                                    "last_seen": datetime.now().isoformat(),
-                                    "mtime": cur_mtime,
-                                    "size": file_size
-                                 }
-                                 if (len(buffer_arr) % BATCH_SIZE == 0) and buffer_arr: #added here because I realized it is theoretically possible that over 4096 files that have already
-                                    #been hashed with no modification can be in the buffer array, and I don't want a memory leak or the program to crash.
-                                    json_writer(buffer_arr, "manifest_cloud.json")
-                                    buffer_arr = {}
+                                 blob_hash = data.get("hash")
+                                 manifest_updater_cloud(blob_name, blob_hash, cur_mtime, file_size, write_now=False)
                                  pbar.update(file_size)
                                  continue
                               else:
@@ -81,10 +71,14 @@ def download_blob(extension, manifest_data):
                                              timeout=5
                                        )
                                     except Exception:
-                                       pass           
-                                 pbar.write(f"\n\nWARNING! The blob {blob_name} has been changed or corrupted!")
+                                       pass
+                                 pbar.clear()
+                                 pbar.write(f"WARNING! The blob {blob_name} has been changed or corrupted!")
+                                 pbar.refresh() 
                                  while True:
-                                       sel = input("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ").strip().upper()
+                                       pbar.write("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ")
+                                       pbar.refresh() 
+                                       sel = input(" ").strip().upper()
                                        if sel == "CON":
                                           blob_client = container_client.get_blob_client(blob_name)
                                           stream_data = blob_client.download_blob()
@@ -92,31 +86,60 @@ def download_blob(extension, manifest_data):
                                               sha256.update(chunk)
                                               pbar.update(len(chunk))
                                           file_hash = sha256.hexdigest()
-                                          if (blob_name and file_hash) and blob_name not in EXCLUDED:
-                                             buffer_arr[blob_name] = {
-                                             "hash": file_hash,
-                                             "last_seen": datetime.now().isoformat(),
-                                             "mtime": cur_mtime,
-                                             "size": file_size
-                                          }
-                                          json_writer(buffer_arr, "manifest_cloud.json")
-                                          buffer_arr = {} 
-                                          pbar.write("\n\nManifest has been updated, continuing program operation.")
+                                          manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now=False)
                                           move_on = True
                                           break
                                        elif sel == "CONVT" and vt_check:
+                                          blob_client = container_client.get_blob_client(blob_name)
+                                          stream_data = blob_client.download_blob()
+                                          for chunk in stream_data.chunks():
+                                              sha256.update(chunk)
+                                              pbar.update(len(chunk))
+                                          file_hash = sha256.hexdigest()
                                           pbar.write("\n\nPlease wait while the program checks the global virus database...")
-                                          #I have to figure out how exactly to handle a corrupted file, since azure does not have a native move
-                                          #feature, and I also need to upload the specific virus log to the container.
+                                          check = online_check(file_hash, blob_name, pbar, local_notif, webhook_notif, "online")
+                                          if check == "likely_safe":
+                                             manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now=False)
+                                          elif check == "error":
+                                             logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+                                             manifest_updater_cloud(None, None, None, None, write_now=True)
+                                             with open('manifest_cloud.json', 'r') as file:
+                                                           info = json.load(file)
+                                                           count = len(info)
+                                             logging.info(f"Successfully updated manifest_cloud.json with {count} entries, however issue with checking VT for blob {blob_name}.")
+                                             pbar.write("The program ran into an error when contacting the VirusTotal service. Please check VT_check.log for more information.")
+                                             pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the blobs before this one.")
+                                             time.sleep(5)
+                                             exit()
+                                          elif check == "rate":
+                                             logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+                                             manifest_updater_cloud(None, None, None, None, write_now=True)
+                                             with open('manifest_cloud.json', 'r') as file:
+                                                           info = json.load(file)
+                                                           count = len(info)
+                                             logging.info(f"Successfully updated manifest_cloud.json with {count} entries, however issue with checking VT for blob {blob_name} due to rate limiting. ")
+                                             pbar.write(f"You have either exceeded the API quota, or VirusTotal is down. Program will save previous blobs (excluding this one) and quit.")
+                                             pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the blobs before this one.")
+                                             time.sleep(5)
+                                             exit()                                          
+                                          elif check == "handled":
+                                             pbar.clear()
+                                             pbar.write(f"The suspicious blob {blob_name} was moved to the quarantine container. Continuing program operation...")
+                                             pbar.refresh()
                                           move_on = True
-                                          pbar.update(file_size)
                                           break
                                        elif sel == "EXIT":
-                                          pbar.write(f"\n\nProgram quitting for data integrity purposes. Please check manifest_cloud.log")
+                                          with open('manifest_cloud.json', 'r') as file:
+                                                           info = json.load(file)
+                                                           count = len(info)
+                                          logging.info(f"Successfully updated manifest_cloud.json with {count} entries, however user halted program for blob {blob_name}")
+                                          manifest_updater_cloud(None, None, None, None, write_now=True)
+                                          pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the blobs before this one.")
+                                          time.sleep(5)
                                           exit()
                                        else:
                                           if sel == "CONVT" and not vt_check:
-                                             pbar.write("\n\nPlease enable VT check in .env, and please run mode C for setup validation.")
+                                             pbar.write("\n\nPlease setup VT in .env, and run mode C for setup validation.")
                                           else:
                                              pbar.write("\n\nInvalid input. Please try again.")
                                           continue
@@ -124,21 +147,12 @@ def download_blob(extension, manifest_data):
                      continue   
                   blob_client = container_client.get_blob_client(blob_name)
                   stream_data = blob_client.download_blob()
-                  with tqdm(total=stream_data.size, desc=f"Hashing file {blob_name} from the cloud", colour="magenta", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:
+                  with tqdm(total=stream_data.size, desc=f"Hashing blob {blob_name} from the cloud", colour="magenta", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:
                         for chunk in stream_data.chunks():
                            sha256.update(chunk)
                            pbar.update(len(chunk))
                   file_hash = sha256.hexdigest()
-                  if (blob_name and file_hash) and blob_name not in EXCLUDED:
-                           buffer_arr[blob_name] = {
-                                       "hash": file_hash,
-                                       "last_seen": datetime.now().isoformat(),
-                                       "mtime": round(modified.timestamp(), 4) if modified else None, #Was giving me typerrors of JSON, so wrapped
-                                       "size": file_size
-                           }
-                  if ((len(buffer_arr) % BATCH_SIZE == 0) or write_now) and buffer_arr: #Prevents edge case that was happening during testing.
-                        json_writer(buffer_arr, "manifest_cloud.json")
-                        buffer_arr = {} 
+                  manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now=False)
             except HttpResponseError as e:
                 print(f"Azure HTTP Error {e.status_code} on file {blob_name}: {e.message}")
                 logging.error(f"Azure HTTP Error {e.status_code} on {blob_name}: {e}")                  
@@ -146,8 +160,7 @@ def download_blob(extension, manifest_data):
                 #https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blobs-list-python
                 #https://learn.microsoft.com/en-us/python/api/azure-core/azure.core.exceptions?view=azure-python
                 #https://learn.microsoft.com/en-us/python/api/azure-storage-blob/azure.storage.blob.storagestreamdownloader?view=azure-python#azure-storage-blob-storagestreamdownloader-download-to-stream
-         if buffer_arr:
-            json_writer(buffer_arr, "manifest_cloud.json")
+         manifest_updater_cloud(None, None, None, None, write_now=True)
          with open('manifest_cloud.json', 'r') as file:
               info = json.load(file)
               count = len(info)
@@ -273,7 +286,12 @@ def total_size(directory, extension):
     return count
 def source_updater(root, files, pbar, manifest_name, manifest_data, this_one): #I added this because I didnt like how
     #before the log accumulated all errors, so now logging is specific to the given manifest file.
+    if this_one == "source":
+       manifest = "manifest"
+    else:
+       manifest = "manifest2"
     for file in files:
+        move_on = False
         if argv.ext and not file.endswith(argv.ext):
            continue
         if os.path.basename(file) in EXCLUDED:
@@ -289,12 +307,14 @@ def source_updater(root, files, pbar, manifest_name, manifest_data, this_one): #
            data = manifest_data[file_path]
            if data.get("mtime") == cur_mtime and data.get("size") == cur_size:
               pbar.update(cur_size)
+              pbar.refresh() 
               continue
         hash_calc = hash256_caller(file_path)
         if hash_calc:
            status = hash_compare(file_path, hash_calc, manifest_data)
            if "new" in status: 
                 manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
+                pbar.update(cur_size)
            elif "corrupted" in status:
                  if local_notif:
                     try:
@@ -305,32 +325,80 @@ def source_updater(root, files, pbar, manifest_name, manifest_data, this_one): #
                            timeout=5
                       )
                     except Exception:
-                           pass           
-                 pbar.write(f"\n\nWARNING! This file {file} has been changed or corrupted!")
+                           pass  
+                 pbar.clear()
+                 pbar.write(f"WARNING! This file {file} has been changed or corrupted!")
+                 pbar.refresh() 
                  while True:
-                     sel = input("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ").strip().upper()
+                     pbar.write("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ")
+                     pbar.refresh() 
+                     sel = input(" ").strip().upper()
                      if sel == "CON":
                         manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
-                        pbar.write("\n\nManifest has been updated, continuing program operation.")
+                        pbar.update(cur_size)
+                        pbar.refresh() 
+                        move_on = True
                         break
                      elif sel == "CONVT" and vt_check:
                         pbar.write("\n\nPlease wait while the program checks the global virus database...")
-                        online_check(hash_calc, file_path, pbar, local_notif, webhook_notif)
+                        virus_check = online_check(hash_calc, file_path, pbar, local_notif, webhook_notif, "local")
+                        if virus_check == "likely_safe":
+                           manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
+                           pbar.update(cur_size)
+                           move_on = True
+                        elif virus_check == "rate":
+                           logging.basicConfig(level=logging.INFO, filename=f"{manifest}.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+                           manifest_updater(None, None, write_now=True, which_one=this_one)
+                           with open(f'{manifest}.json', 'r') as file:
+                                info = json.load(file)
+                                count = len(info)
+                           logging.info(f"Successfully updated {manifest}.json with {count} entries, however issue with checking VT for file {file_path} due to rate limiting. ")
+                           pbar.write(f"You have either exceeded the API quota, or VirusTotal is down. Program will save previous files (excluding this one) and quit.")
+                           pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the files before this one.")
+                           time.sleep(5)
+                           exit()   
+                        elif virus_check == "error":
+                           logging.basicConfig(level=logging.INFO, filename=f"{manifest}.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+                           manifest_updater(None, None, write_now=True, which_one=this_one)
+                           with open(f'{manifest}.json', 'r') as file:
+                                 info = json.load(file)
+                                 count = len(info)
+                           logging.info(f"Successfully updated {manifest} with {count} entries, however issue with checking VT for file {file_path}.")
+                           pbar.write("The program ran into an error when contacting the VirusTotal service. Please check VT_check.log for more information.")
+                           pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the files before this one.")
+                           time.sleep(5)
+                           exit()
+                        elif "handled":
+                             pbar.clear()
+                             pbar.write(f"The suspicious file {file_path} was moved to the quarantine container. Continuing program operation...")
+                             pbar.update(cur_size)
+                             pbar.refresh()
+                             move_on = True
                         break
                      elif sel == "EXIT":
                         pbar.write(f"\n\nProgram quitting for data integrity purposes. Please check {manifest_name}.log")
+                        logging.basicConfig(level=logging.INFO, filename=f"{manifest}.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+                        manifest_updater(None, None, write_now=True, which_one=this_one)
+                        with open(f'{manifest}.json', 'r') as file:
+                                 info = json.load(file)
+                                 count = len(info)
+                        logging.info(f"Successfully updated {manifest} with {count} entries, however user halted program for file {file_path}")
+                        pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the files before this one.")
                         exit()
                      else:
                         if sel == "CONVT" and not vt_check:
-                           pbar.write("\n\nPlease enable VT check in .env, and please run mode C for setup validation.")
+                           pbar.write("\n\nPlease setup VT check in .env, and run mode C for setup validation.")
                         else:
                            pbar.write("\n\nInvalid input. Please try again.")
                         continue
+                 if move_on:
+                    continue
            elif "same" in status:
                 manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
+                pbar.update(cur_size)
         else:
           pbar.write(f"FAILURE: The following file {file} could not be hashed. Please check {manifest_name}.log for information.")  
-        pbar.update(cur_size)
+          pbar.update(cur_size)
 def manifest_updater(file_path, hash_calc, write_now, which_one):
     global buffer_arr #Global because buffer_arr needs to be accessed globally.
     if (file_path and hash_calc) and os.path.basename(file_path) not in EXCLUDED:
@@ -346,9 +414,19 @@ def manifest_updater(file_path, hash_calc, write_now, which_one):
            json_writer(buffer_arr,"manifest.json")
         elif which_one == "target":
            json_writer(buffer_arr,"manifest2.json")
-        else:
-           json_writer(buffer_arr,"manifest_cloud.json")
-        buffer_arr = {}  
+        buffer_arr = {}
+def manifest_updater_cloud(blob, hash, modified, size, write_now):
+   global buffer_arr
+   if (blob and hash) and blob not in EXCLUDED:
+      buffer_arr[blob] = {
+                  "hash": hash,
+                  "last_seen": datetime.now().isoformat(),
+                  "mtime": modified,
+                  "size": size
+      }
+   if ((len(buffer_arr) % BATCH_SIZE == 0) or write_now) and buffer_arr: 
+      json_writer(buffer_arr, "manifest_cloud.json")
+      buffer_arr = {}
 argv = argCV()
 if argv.source == " " and not (argv.mode == "C" or argv.mode =="D"):
    print("ERROR: An empty string " " was provided. This is only allowed for mode C and mode D.")
