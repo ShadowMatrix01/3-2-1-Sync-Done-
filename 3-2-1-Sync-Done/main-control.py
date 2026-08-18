@@ -10,7 +10,7 @@ import json
 import time
 import schedule
 from pytz import timezone
-from azure.storage.blob import BlobClient, ContainerClient, BlobServiceClient
+from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import HttpResponseError
 from datetime import datetime
 from hashHOT import hash256_caller
@@ -97,7 +97,7 @@ def download_blob(extension, manifest_data):
                                               pbar.update(len(chunk))
                                           file_hash = sha256.hexdigest()
                                           pbar.write("\n\nPlease wait while the program checks the global virus database...")
-                                          check = online_check(file_hash, blob_name, pbar, local_notif, webhook_notif, "online")
+                                          check = online_check(file_hash, blob_name, pbar, local_notif, webhook_notif, "online", blob_service_client)
                                           if check == "likely_safe":
                                              manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now=False)
                                           elif check == "error":
@@ -121,10 +121,20 @@ def download_blob(extension, manifest_data):
                                              pbar.write(f"You have either exceeded the API quota, or VirusTotal is down. Program will save previous blobs (excluding this one) and quit.")
                                              pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the blobs before this one.")
                                              time.sleep(5)
-                                             exit()                                          
+                                             exit()
+                                          elif check == "unexpected_error":                                             
+                                             logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+                                             manifest_updater_cloud(None, None, None, None, write_now=True)
+                                             with open('manifest_cloud.json', 'r') as file:
+                                                           info = json.load(file)
+                                                           count = len(info)
+                                             logging.info(f"Successfully updated manifest_cloud.json with {count} entries, however issue with moving {blob_name} to quarantine.")
+                                             pbar.write(f"Either Azure may be down, or some unexpected event caused the program to stop. Please check the manifest_cloud.log file.")
+                                             pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the blobs before this one.")
+                                             time.sleep(5)
+                                             exit()                                 
                                           elif check == "handled":
                                              pbar.clear()
-                                             pbar.write(f"The suspicious blob {blob_name} was moved to the quarantine container. Continuing program operation...")
                                              pbar.refresh()
                                           move_on = True
                                           break
@@ -218,14 +228,16 @@ def create_manifest(path):
 def argCV():
     #Command Line Interface CLI, similar to C which makes sense.
     #considering python is an interpreted language.
-    arg = argparse.ArgumentParser(description="3-2-1 Sync Done! A Data Integrity Solution")
-    arg.add_argument("--source", required=True, help="REQUIRED: Please add root directory as a string (e.g. \"C:\\Users\\Username\").")
-    arg.add_argument("--source2", required=False, help="Optional: Add second directory to compare as a string (e.g. \"C:\\Users\\Username\")")
+    arg = argparse.ArgumentParser(description="3-2-1 Sync Done! A Data Integrity Solution", formatter_class=argparse.RawTextHelpFormatter) #class because new line wasn't working.
+    arg.add_argument("--source", required=True, help="REQUIRED: Please add root directory as a string (e.g. \"C:\\Users\\Username\\Downloads\").")
+    arg.add_argument("--source2", required=False, help="Optional: Add second directory to compare as a string (e.g. \"C:\\Users\\Username\\Videos\").")
     arg.add_argument("--ext", help="Optional: Only backup files by extension (as a \"string\") (e.g., \".jpg\", \".pdf\", etc.)")
     arg.add_argument("--mode", required=True, 
-                     help="REQUIRED: Mode A: Hash Files.\nMode 1B: Check FILE integrity "
-                     "in manifest.json.\nMode 2B: Check FILE integrity in manifest2.json" 
-                     "\nMode 3B: Check if Notifications, Webhook, and VT API are working (use a random string for --source)")
+                     help="REQUIRED: Mode A: Hash, Verify, Quarantine Files."
+                     "\nMode 1B: Checking the integrity of a specific file in manifest.json." 
+                     "\nMode 2B: Checking the integrity of a specific file in a manifest2.json" 
+                     "\nMode C: Check if Local Notifications, Discord Webhook, and VirusTotal API are working as intended (use a random string for --source)"
+                     "\nMode D: Hash, Verify, Quarantine Blobs from Cloud. (use a random string for --source)")
     return arg.parse_args()
 def retrieve_file(target_path, manifest_data):
     if not os.path.exists(manifest_data) or os.path.getsize(manifest_data) == 0:
@@ -341,7 +353,7 @@ def source_updater(root, files, pbar, manifest_name, manifest_data, this_one): #
                         break
                      elif sel == "CONVT" and vt_check:
                         pbar.write("\n\nPlease wait while the program checks the global virus database...")
-                        virus_check = online_check(hash_calc, file_path, pbar, local_notif, webhook_notif, "local")
+                        virus_check = online_check(hash_calc, file_path, pbar, local_notif, webhook_notif, "local", None)
                         if virus_check == "likely_safe":
                            manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
                            pbar.update(cur_size)
