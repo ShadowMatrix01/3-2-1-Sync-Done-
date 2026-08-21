@@ -9,6 +9,7 @@ import hashlib
 import json
 import time
 import schedule
+import functools
 from pytz import timezone
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import HttpResponseError
@@ -17,8 +18,9 @@ from hashHOT import hash256_caller
 from json_control import json_writer, hash_compare, load_manifest
 from tqdm import tqdm
 from VT_online_check import online_check
-from notify import main_menu, local_notification_check, webhook_check, VT_check, alert_preferences
+from notify import main_menu, local_notification_check, webhook_check, VT_check, alert_preferences, alert_sound
 from plyer import notification
+from pytz import timezone
 load_dotenv()
 BATCH_SIZE = 4096 #Constant, because the amount of IO operations was slowing down the project by a lot.
 buffer_arr = {}
@@ -27,10 +29,29 @@ vt_check = False
 local_notif = False
 webhook_notif = False
 EXCLUDED = ["manifest.json", "manifest2.json", "manifest_cloud.json", "manifest.log", "manifest2.log", "manifest_cloud.log", "VT_check.log", "VT_online_check.py"]     
+def catch_exceptions(cancel_on_failure=False):
+    def catch_exceptions_decorator(job_func):
+        @functools.wraps(job_func)
+        def wrapper(*args, **kwargs):
+            try:
+                return job_func(*args, **kwargs)
+            except:
+                import traceback
+                print(traceback.format_exc())
+                logging.critical(traceback.format_exc())
+                if cancel_on_failure:
+                    return schedule.CancelJob
+        return wrapper
+    return catch_exceptions_decorator
+#I could not use standard exceptions, so decorator and wrapper taken from docs for scheduler.
+#https://schedule.readthedocs.io/en/stable/exception-handling.html
+@catch_exceptions(cancel_on_failure=True)
 def download_blob(extension, manifest_data):
+    global buffer_arr
+    buffer_arr = {}
     azure_connection_string = os.getenv("AZURE_CONNECT_STR")
     azure_container_name = os.getenv("AZURE_CONTAINER")
-    if azure_connection_string is None:
+    if not azure_connection_string :
        print("Error: AZURE_CONNECT_STR not found. Please create a .env file based on .env.example")
        return
     if not azure_container_name:
@@ -233,11 +254,14 @@ def argCV():
     arg.add_argument("--source2", required=False, help="Optional: Add second directory to compare as a string (e.g. \"C:\\Users\\Username\\Videos\").")
     arg.add_argument("--ext", help="Optional: Only backup files by extension (as a \"string\") (e.g., \".jpg\", \".pdf\", etc.)")
     arg.add_argument("--mode", required=True, 
-                     help="REQUIRED: Mode A: Hash, Verify, Quarantine Files."
-                     "\nMode 1B: Checking the integrity of a specific file in manifest.json." 
-                     "\nMode 2B: Checking the integrity of a specific file in a manifest2.json" 
-                     "\nMode C: Check if Local Notifications, Discord Webhook, and VirusTotal API are working as intended (use a random string for --source)"
-                     "\nMode D: Hash, Verify, Quarantine Blobs from Cloud. (use a random string for --source)")
+                     help="REQUIRED: Type the character(s) that corresponds with the respective function. " 
+                     "\n[A1]: Hash, Verify, Quarantine Files."
+                     "\n[A2]: Hash, Verify, and Quarantine Files using Schedule."
+                     "\n[1B]: Checking the integrity of a specific file in manifest.json." 
+                     "\n[2B]: Checking the integrity of a specific file in a manifest2.json" 
+                     "\n[C]: Check if Local Notifications, Discord Webhook, Azure Blob Storage, and VirusTotal API are working as intended (use a random string for --source)"
+                     "\n[D1]: Hash, Verify, Quarantine Blobs from Cloud. (use a random string for --source)"
+                     "\n[D2]: Hash, Verify, Quarantine Blobs from Cloud using Schedule. (use a random string for --source)")
     return arg.parse_args()
 def retrieve_file(target_path, manifest_data):
     if not os.path.exists(manifest_data) or os.path.getsize(manifest_data) == 0:
@@ -439,39 +463,58 @@ def manifest_updater_cloud(blob, hash, modified, size, write_now):
    if ((len(buffer_arr) % BATCH_SIZE == 0) or write_now) and buffer_arr: 
       json_writer(buffer_arr, "manifest_cloud.json")
       buffer_arr = {}
+@catch_exceptions(cancel_on_failure=True)
+def a_mode():
+       global buffer_arr
+       logging.basicConfig(level=logging.INFO, filename="manifest.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+       #Using force, I was able to get the program to force logging correctly, because the logger ignores this unless its forced.
+       print("Please wait while the program discovers the total size of the directory in bytes...")
+       total = total_size(argv.source, argv.ext)
+       manifest_source = load_manifest("manifest.json")
+       with tqdm(total=total, desc="Hashing files, please wait", colour="green", unit="B", unit_scale=True, unit_divisor=1024) as pbar:
+             for root, dirs, files in os.walk(argv.source):
+                source_updater(root, files, pbar, manifest_name="manifest", manifest_data=manifest_source, this_one="source")
+       manifest_updater(None, None, write_now=True, which_one="source")
+       with open('manifest.json', 'r') as file:
+                     info = json.load(file)
+                     count = len(info)
+       logging.info(f"Successfully updated manifest.json with {count} entries.")
+       if argv.source2: #Because it would crash, for obvious reasons.
+          logging.basicConfig(level=logging.INFO, filename="manifest2.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+          buffer_arr = {}
+          print("Please wait while the program discovers the total size of the second directory in bytes...")
+          total = total_size(argv.source2, argv.ext)
+          manifest_target = load_manifest("manifest2.json")
+          with tqdm(total=total, desc="Hashing second batch of files, please wait", colour="blue", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:
+             for root, dirs, files in os.walk(argv.source2):
+                source_updater(root, files, pbar, manifest_name="manifest2", manifest_data=manifest_target, this_one="target")
+          manifest_updater(None, None, write_now=True, which_one="target")
+          with open('manifest2.json', 'r') as file:
+                        info = json.load(file)
+                        count = len(info)
+          logging.info(f"Successfully updated manifest2.json with {count} entries.")
+       buffer_arr = {}
 argv = argCV()
-if argv.source == " " and not (argv.mode == "C" or argv.mode =="D"):
+if argv.source == " " and not (argv.mode == "C" or argv.mode =="D1" or argv.mode == "D2"):
    print("ERROR: An empty string " " was provided. This is only allowed for mode C and mode D.")
    exit()
-if argv.mode == "A":
-   logging.basicConfig(level=logging.INFO, filename="manifest.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
-   #Using force, I was able to get the program to force logging correctly, because the logger ignores this unless its forced.
+if argv.mode == "A1":
    validate()
-   print("Please wait while the program discovers the total size of the directory in bytes...")
-   total = total_size(argv.source, argv.ext)
-   manifest_source = load_manifest("manifest.json")
-   with tqdm(total=total, desc="Hashing files, please wait", colour="green", unit="B", unit_scale=True, unit_divisor=1024) as pbar:
-         for root, dirs, files in os.walk(argv.source):
-            source_updater(root, files, pbar, manifest_name="manifest", manifest_data=manifest_source, this_one="source")
-   manifest_updater(None, None, write_now=True, which_one="source")
-   with open('manifest.json', 'r') as file:
-                 info = json.load(file)
-                 count = len(info)
-   logging.info(f"Successfully updated manifest.json with {count} entries.")
-   if argv.source2: #Because it would crash, for obvious reasons.
-      logging.basicConfig(level=logging.INFO, filename="manifest2.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
-      buffer_arr = {}
-      print("Please wait while the program discovers the total size of the second directory in bytes...")
-      total = total_size(argv.source2, argv.ext)
-      manifest_target = load_manifest("manifest2.json")
-      with tqdm(total=total, desc="Hashing second batch of files, please wait", colour="blue", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:
-         for root, dirs, files in os.walk(argv.source2):
-            source_updater(root, files, pbar, manifest_name="manifest2", manifest_data=manifest_target, this_one="target")
-      manifest_updater(None, None, write_now=True, which_one="target")
-      with open('manifest2.json', 'r') as file:
-                    info = json.load(file)
-                    count = len(info)
-      logging.info(f"Successfully updated manifest2.json with {count} entries.")
+   a_mode()
+elif argv.mode == "A2":
+   time_task = os.getenv("TIME_IN_24_HOURS")
+   timezone_task = os.getenv("TIMEZONE_DST_AWARE")
+   if not time_task:
+      print("Error: Time not provided. Please create a .env file based on .env.example")
+      exit()
+   if not timezone_task:
+      print("Error: Timezone not provided. Please create a .env file based on .env.example and pytz_timezones.txt")
+      exit()
+   validate()
+   schedule.every().day.at(time_task, timezone(timezone_task)).do(a_mode)
+   while True:
+      schedule.run_pending()
+      time.sleep(1)
 elif (argv.mode == "1B" or argv.mode == "2B") and not argv.source2:
      validate()
      if argv.mode == "1B":
@@ -483,7 +526,7 @@ elif (argv.mode == "1B" or argv.mode == "2B") and not argv.source2:
      check_if_file_exists(argv.source, manifest)
 elif argv.mode == "C":
      main_menu("notify")
-elif argv.mode == "D":
+elif argv.mode == "D1":
      logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
      #I added this because the logging was excessive by default, so now only actual errors, not standard http request information will show up.
      logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
@@ -492,6 +535,26 @@ elif argv.mode == "D":
      validate()
      manifest_target = load_manifest("manifest_cloud.json")
      download_blob(argv.ext, manifest_target)
+elif argv.mode == "D2":
+     time_task = os.getenv("TIME_IN_24_HOURS")
+     timezone_task = os.getenv("TIMEZONE_DST_AWARE")
+     if not time_task:
+          print("Error: Time not provided. Please create a .env file based on .env.example")
+          exit()
+     if not timezone_task:
+          print("Error: Timezone not provided. Please create a .env file based on .env.example and pytz_timezones.txt")
+          exit()
+     logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+     #I added this because the logging was excessive by default, so now only actual errors, not standard http request information will show up.
+     logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+     logging.getLogger("azure.core.pipeline.transport").setLevel(logging.WARNING)
+     #https://stackoverflow.com/questions/52051501/azure-blob-storage-sdk-switch-off-logging
+     validate()
+     manifest_target = load_manifest("manifest_cloud.json")
+     schedule.every().day.at(time_task, timezone(timezone_task)).do(download_blob, argv.ext, manifest_target)
+     while True:
+       schedule.run_pending()
+       time.sleep(1)   
 else:
     if not argv.source2:
        print(f"{argv.mode} is not a valid mode. Please try again.")
@@ -500,8 +563,6 @@ else:
 #os.walk(): https://www.w3schools.com/python/ref_os_walk.asp
 #shebang: https://realpython.com/python-shebang/ 
 #Progress barhttps://tqdm.github.io/
-
-#The bottom three will be implemented in the next coming updates.
 #Scheduler: https://pypi.org/project/schedule/
 #timezone: https://schedule.readthedocs.io/en/stable/timezones.html
 #https://stackoverflow.com/questions/3489183/how-can-i-get-a-human-readable-timezone-name-in-python
