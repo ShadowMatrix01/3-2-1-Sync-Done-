@@ -19,13 +19,13 @@ def alert_sound():
     return
 def virus_local(file, count):
      try:
+        alert_sound()
         notification.notify(
                 title="CRITICAL: MALICIOUS FILE/BLOB, ACTION NEEDED!",
                 message=f"FILE/BLOB: {file} MARKED AS MALICIOUS BY {count} VENDORS.",
                 app_name="3-2-1-Sync-Done!",
                 timeout=5
         )
-        alert_sound()
      except Exception:
         pass    
 def virus_webhook(file, count):
@@ -63,7 +63,7 @@ def suspicious_blob_log(blob, response, dest, source):
          json.dump(response, f, indent=4)  
     with open(file=log, mode="rb") as stream:
          blob_client = source.upload_blob(name=f"{blob}_report.log", data=stream, overwrite=True)
-def online_check(hash, file, pbar, local_notif, webhook_notif, version, client):
+def online_check(hash, file, pbar, local_notif, webhook_notif, version, client, pref):
     base_url = os.getenv("URL")
     api_key = os.getenv("APIKEY")
     if not api_key:
@@ -93,10 +93,10 @@ def online_check(hash, file, pbar, local_notif, webhook_notif, version, client):
            pbar.write(f"This file/blob {file} has not been seen on the VirusTotal database. Continuing program operation...")
            return "likely_safe"
         response.raise_for_status() #https://stackoverflow.com/questions/61463224/when-to-use-raise-for-status-vs-status-code-testing
-        malicious(response.json(), file, pbar, local_notif, webhook_notif, version, client)
+        malicious(response.json(), file, pbar, local_notif, webhook_notif, version, client, pref)
     except requests.exceptions.RequestException as e:
         pbar.write(f"API Error: {e}")
-def malicious(response_info, file, pbar, local_notif, webhook_notif, vers, blob_client):
+def malicious(response_info, file, pbar, local_notif, webhook_notif, vers, blob_client, pref):
     if isinstance(response_info, str): #If string, then it is an error code.
        pbar.write(f"An error was encountered: {response_info}")
        logging.basicConfig(level=logging.WARNING, filename='VT_check.log', format='%(asctime)s - %(levelname)s: %(message)s', force=True)
@@ -110,10 +110,10 @@ def malicious(response_info, file, pbar, local_notif, webhook_notif, vers, blob_
        if webhook_notif:
           virus_webhook(file, count)
        if vers == "local":
-          quarantine_file(file, count, response_info, pbar)
+          quarantine_file(file, count, response_info, pbar, pref)
        elif vers == "online":
-          quarantine_file_cloud(file, count, response_info, pbar, blob_client)
-def quarantine_file(suspicious_file, count, resp, pbar):
+          quarantine_file_cloud(file, count, response_info, pbar, blob_client, pref)
+def quarantine_file(suspicious_file, count, resp, pbar, pref):
     quarantine_dir = "quarantine"
     os.makedirs(quarantine_dir, exist_ok=True)
     f = os.path.basename(suspicious_file)
@@ -121,8 +121,29 @@ def quarantine_file(suspicious_file, count, resp, pbar):
     logging.critical(f"ALERT! The file {suspicious_file} has been flagged by {count} vendors as being suspicious.")
     pbar.write(f"ALERT!: This file {suspicious_file} is flagged as malicious by {count} vendors.")
     while True:
-        pbar.write("Enter 'Y' to move to quarantine folder, or 'N' if you believe this is a mistake: ")
-        move = input(" ").strip().upper()
+        if pref is None:
+           pbar.write("Enter 'Y' to move to quarantine folder, or 'N' if you believe this is a mistake: ")
+           move = input(" ").strip().upper()
+        else:
+           try:
+                with open("schedule_pref.json", "r") as f:
+                         info = json.load(f)
+                move_option = info.get("quarantine") 
+                if move_option == "manual":
+                    pbar.write("Enter 'Y' to move to quarantine folder, or 'N' if you believe this is a mistake: ")
+                    move = input(" ").strip().upper()
+                elif move_option == "true":
+                    move = "Y"
+                elif move_option == "false":
+                    move = "N"
+                else:
+                    pbar.write("schedule_pref.json has an invalid value for quarantine, please check file. Accepted values \"manual\", \"false\", \"true\". ")
+                    logging.warning("schedule_pref.json has an invalid value for quarantine, please check file. Accepted values \"manual\", \"false\", \"true\". ")
+                    return "unexpected_error"
+           except Exception as e:
+                  pbar.write(f"Unexpected Error: {e}")
+                  logging.error(f"Unexpected Error: {e}")
+                  return "unexpected_error"
         if move == "Y":
             try:
                 #going to create specialized log with the vendors, and why it was flagged.
@@ -146,7 +167,7 @@ def quarantine_file(suspicious_file, count, resp, pbar):
         else:
             pbar.write("Invalid input, please try again.")
             continue
-def quarantine_file_cloud(blob, count, resp, pbar, client): 
+def quarantine_file_cloud(blob, count, resp, pbar, client, pref): 
     quarantine_dir = "quarantine_cloud"
     os.makedirs(quarantine_dir, exist_ok=True)
     dst = os.path.join(quarantine_dir, blob)
@@ -154,8 +175,29 @@ def quarantine_file_cloud(blob, count, resp, pbar, client):
     pbar.write(f"ALERT!: This blob {blob} is flagged as malicious by {count} vendors.")
     logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
     while True:
-        pbar.write("Enter 'Y' to move to quarantine container (cloud), or 'N' if you believe this is a mistake: ")
-        move = input(" ").strip().upper()
+        if pref is None:
+           pbar.write("Enter 'Y' to move to quarantine container (cloud), or 'N' if you believe this is a mistake: ")
+           move = input(" ").strip().upper()
+        else:
+           try:
+                with open("schedule_pref.json", "r") as f:
+                         info = json.load(f)
+                move_option = info.get("quarantine") 
+                if move_option == "manual":
+                    pbar.write("Enter 'Y' to move to quarantine container (cloud), or 'N' if you believe this is a mistake: ")
+                    move = input(" ").strip().upper()
+                elif move_option == "true":
+                    move = "Y"
+                elif move_option == "false":
+                    move = "N"
+                else:
+                    pbar.write("schedule_pref.json has an invalid value for quarantine, please check file. Accepted values \"manual\", \"false\", \"true\". ")
+                    logging.warning("schedule_pref.json has an invalid value for quarantine, please check file. Accepted values \"manual\", \"false\", \"true\". ")
+                    return "unexpected_error"
+           except Exception as e:
+                   pbar.write(f"Unexpected Error: {e}")
+                   logging.error(f"Unexpected Error: {e}")
+                   return "unexpected_error"
         if move == "Y":
             try:
                 status = quarantine_file_cloud_2(blob, pbar, client, resp, dst)

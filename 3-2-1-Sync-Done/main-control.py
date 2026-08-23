@@ -18,7 +18,7 @@ from hashHOT import hash256_caller
 from json_control import json_writer, hash_compare, load_manifest
 from tqdm import tqdm
 from VT_online_check import online_check
-from notify import main_menu, local_notification_check, webhook_check, VT_check, alert_preferences, alert_sound
+from notify import main_menu, local_notification_check, webhook_check, VT_check, alert_preferences, alert_sound, schedule_preferences
 from plyer import notification
 from pytz import timezone
 load_dotenv()
@@ -46,16 +46,16 @@ def catch_exceptions(cancel_on_failure=False):
 #I could not use standard exceptions, so decorator and wrapper taken from docs for scheduler.
 #https://schedule.readthedocs.io/en/stable/exception-handling.html
 @catch_exceptions(cancel_on_failure=True)
-def download_blob(extension, manifest_data):
+def download_blob(extension, manifest_data, pref):
     global buffer_arr
     buffer_arr = {}
     azure_connection_string = os.getenv("AZURE_CONNECT_STR")
     azure_container_name = os.getenv("AZURE_CONTAINER")
     if not azure_connection_string :
-       print("Error: AZURE_CONNECT_STR not found. Please create a .env file based on .env.example")
+       print("Error: AZURE_CONNECT_STR not found. Please create a .env file based on .env example")
        return
     if not azure_container_name:
-       print("Error: AZURE_CONTAINER not found. Please create a .env file based on .env.example")
+       print("Error: AZURE_CONTAINER not found. Please create a .env file based on .env example")
        return
     try:
          blob_service_client = BlobServiceClient.from_connection_string(azure_connection_string)
@@ -85,6 +85,7 @@ def download_blob(extension, manifest_data):
                               else:
                                  if local_notif:
                                     try:
+                                       alert_sound()
                                        notification.notify(
                                              title="Corrupted File Warning!",
                                              message=f"{blob_name} has been changed or is corrupted, please select an option in the program!",
@@ -97,9 +98,23 @@ def download_blob(extension, manifest_data):
                                  pbar.write(f"WARNING! The blob {blob_name} has been changed or corrupted!")
                                  pbar.refresh() 
                                  while True:
-                                       pbar.write("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ")
-                                       pbar.refresh() 
-                                       sel = input(" ").strip().upper()
+                                       if pref is None:
+                                          pbar.write("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ")
+                                          pbar.refresh() 
+                                          sel = input(" ").strip().upper()
+                                       else:
+                                          if pref == "manual":
+                                             pbar.write("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ")
+                                             pbar.refresh() 
+                                             sel = input(" ").strip().upper()
+                                          elif pref == "false":
+                                             sel = "CON"
+                                          elif pref == "true":
+                                             sel = "CONVT"
+                                          else:
+                                             pbar.write("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
+                                             logging.warning("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
+                                             sel = "EXIT" 
                                        if sel == "CON":
                                           blob_client = container_client.get_blob_client(blob_name)
                                           stream_data = blob_client.download_blob()
@@ -118,7 +133,7 @@ def download_blob(extension, manifest_data):
                                               pbar.update(len(chunk))
                                           file_hash = sha256.hexdigest()
                                           pbar.write("\n\nPlease wait while the program checks the global virus database...")
-                                          check = online_check(file_hash, blob_name, pbar, local_notif, webhook_notif, "online", blob_service_client)
+                                          check = online_check(file_hash, blob_name, pbar, local_notif, webhook_notif, "online", blob_service_client, pref)
                                           if check == "likely_safe":
                                              manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now=False)
                                           elif check == "error":
@@ -204,13 +219,16 @@ def download_blob(extension, manifest_data):
         logging.error(f"Unexpected Azure Error: {e}")
 def validate(): #Because otherwise, invalid json would be accepted, so it is checked before anything.
     setup = alert_preferences("main-control")
-    if not setup:
-       print("\n\nPlease check .env file, and run mode C for setup validation.")
+    setup_2 = schedule_preferences("main-control")
+    if not setup or not setup_2:
+       print("Sorry, but the program was unable to continue because it has detected a setup issue.")
+       print("Please check .env file, and run mode C to validate the alert_api_preferences.json and schedule_pref.json files.")
+       print("The program will now exit in 5 seconds.")
+       time.sleep(5)
        exit()
     global local_notif
     global webhook_notif
     global vt_check
-    global azure_cloud_hash
     vt_check = VT_check("main-control")
     local_notif = local_notification_check("main-control")
     webhook_notif = webhook_check("main-control")
@@ -242,7 +260,6 @@ def validate(): #Because otherwise, invalid json would be accepted, so it is che
              print(f"This program will exit in 5 seconds for security reasons.")
              time.sleep(5)
              exit()
-    #For now, this is l5)
 def create_manifest(path):
     with open(path, "w") as f:
          json.dump({}, f)
@@ -320,7 +337,7 @@ def total_size(directory, extension):
             filepath = os.path.join(root, file)
             count += os.path.getsize(filepath)
     return count
-def source_updater(root, files, pbar, manifest_name, manifest_data, this_one): #I added this because I didnt like how
+def source_updater(root, files, pbar, pref, manifest_name, manifest_data, this_one): #I added this because I didnt like how
     #before the log accumulated all errors, so now logging is specific to the given manifest file.
     if this_one == "source":
        manifest = "manifest"
@@ -354,6 +371,7 @@ def source_updater(root, files, pbar, manifest_name, manifest_data, this_one): #
            elif "corrupted" in status:
                  if local_notif:
                     try:
+                      alert_sound()
                       notification.notify(
                            title="Corrupted File Warning!",
                            message=f"{file} has been changed or is corrupted, please select an option in the program!",
@@ -366,9 +384,23 @@ def source_updater(root, files, pbar, manifest_name, manifest_data, this_one): #
                  pbar.write(f"WARNING! This file {file} has been changed or corrupted!")
                  pbar.refresh() 
                  while True:
-                     pbar.write("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ")
-                     pbar.refresh() 
-                     sel = input(" ").strip().upper()
+                     if pref is None:
+                        pbar.write("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ")
+                        pbar.refresh() 
+                        sel = input(" ").strip().upper()
+                     else:
+                        if pref == "manual":
+                           pbar.write("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ")
+                           pbar.refresh() 
+                           sel = input(" ").strip().upper()
+                        elif pref == "false":
+                           sel = "CON"
+                        elif pref == "true":
+                           sel = "CONVT"
+                        else:
+                           pbar.write("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
+                           logging.warning("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
+                           sel = "EXIT" 
                      if sel == "CON":
                         manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
                         pbar.update(cur_size)
@@ -377,7 +409,7 @@ def source_updater(root, files, pbar, manifest_name, manifest_data, this_one): #
                         break
                      elif sel == "CONVT" and vt_check:
                         pbar.write("\n\nPlease wait while the program checks the global virus database...")
-                        virus_check = online_check(hash_calc, file_path, pbar, local_notif, webhook_notif, "local", None)
+                        virus_check = online_check(hash_calc, file_path, pbar, local_notif, webhook_notif, "local", None, pref)
                         if virus_check == "likely_safe":
                            manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
                            pbar.update(cur_size)
@@ -464,7 +496,7 @@ def manifest_updater_cloud(blob, hash, modified, size, write_now):
       json_writer(buffer_arr, "manifest_cloud.json")
       buffer_arr = {}
 @catch_exceptions(cancel_on_failure=True)
-def a_mode():
+def a_mode(pref):
        global buffer_arr
        logging.basicConfig(level=logging.INFO, filename="manifest.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
        #Using force, I was able to get the program to force logging correctly, because the logger ignores this unless its forced.
@@ -473,7 +505,7 @@ def a_mode():
        manifest_source = load_manifest("manifest.json")
        with tqdm(total=total, desc="Hashing files, please wait", colour="green", unit="B", unit_scale=True, unit_divisor=1024) as pbar:
              for root, dirs, files in os.walk(argv.source):
-                source_updater(root, files, pbar, manifest_name="manifest", manifest_data=manifest_source, this_one="source")
+                source_updater(root, files, pbar, pref, manifest_name="manifest", manifest_data=manifest_source, this_one="source")
        manifest_updater(None, None, write_now=True, which_one="source")
        with open('manifest.json', 'r') as file:
                      info = json.load(file)
@@ -487,7 +519,7 @@ def a_mode():
           manifest_target = load_manifest("manifest2.json")
           with tqdm(total=total, desc="Hashing second batch of files, please wait", colour="blue", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:
              for root, dirs, files in os.walk(argv.source2):
-                source_updater(root, files, pbar, manifest_name="manifest2", manifest_data=manifest_target, this_one="target")
+                source_updater(root, files, pbar, pref, manifest_name="manifest2", manifest_data=manifest_target, this_one="target")
           manifest_updater(None, None, write_now=True, which_one="target")
           with open('manifest2.json', 'r') as file:
                         info = json.load(file)
@@ -500,18 +532,25 @@ if argv.source == " " and not (argv.mode == "C" or argv.mode =="D1" or argv.mode
    exit()
 if argv.mode == "A1":
    validate()
-   a_mode()
+   a_mode(None)
 elif argv.mode == "A2":
    time_task = os.getenv("TIME_IN_24_HOURS")
    timezone_task = os.getenv("TIMEZONE_DST_AWARE")
    if not time_task:
-      print("Error: Time not provided. Please create a .env file based on .env.example")
+      print("Error: Time not provided. Please create a .env file based on .env example")
       exit()
    if not timezone_task:
-      print("Error: Timezone not provided. Please create a .env file based on .env.example and pytz_timezones.txt")
+      print("Error: Timezone not provided. Please create a .env file based on .env example and pytz_timezones.txt")
       exit()
    validate()
-   schedule.every().day.at(time_task, timezone(timezone_task)).do(a_mode)
+   try:
+      with open("schedule_pref.json", "r") as f:
+           info = json.load(f)
+      check_for_virus = info.get("virus_check") 
+   except Exception as e:
+      print(f"Exception: {e}")
+      exit()
+   schedule.every().day.at(time_task, timezone(timezone_task)).do(a_mode, check_for_virus)
    while True:
       schedule.run_pending()
       time.sleep(1)
@@ -534,16 +573,23 @@ elif argv.mode == "D1":
      #https://stackoverflow.com/questions/52051501/azure-blob-storage-sdk-switch-off-logging
      validate()
      manifest_target = load_manifest("manifest_cloud.json")
-     download_blob(argv.ext, manifest_target)
+     download_blob(argv.ext, manifest_target, None)
 elif argv.mode == "D2":
      time_task = os.getenv("TIME_IN_24_HOURS")
      timezone_task = os.getenv("TIMEZONE_DST_AWARE")
      if not time_task:
-          print("Error: Time not provided. Please create a .env file based on .env.example")
+          print("Error: Time not provided. Please create a .env file based on .env example")
           exit()
      if not timezone_task:
-          print("Error: Timezone not provided. Please create a .env file based on .env.example and pytz_timezones.txt")
+          print("Error: Timezone not provided. Please create a .env file based on .env example and pytz_timezones.txt")
           exit()
+     try:
+         with open("schedule_pref.json", "r") as f:
+              info = json.load(f)
+         check_for_virus = info.get("virus_check") 
+     except Exception as e:
+         print(f"Exception: {e}")
+         exit()
      logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
      #I added this because the logging was excessive by default, so now only actual errors, not standard http request information will show up.
      logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
@@ -551,7 +597,7 @@ elif argv.mode == "D2":
      #https://stackoverflow.com/questions/52051501/azure-blob-storage-sdk-switch-off-logging
      validate()
      manifest_target = load_manifest("manifest_cloud.json")
-     schedule.every().day.at(time_task, timezone(timezone_task)).do(download_blob, argv.ext, manifest_target)
+     schedule.every().day.at(time_task, timezone(timezone_task)).do(download_blob, argv.ext, manifest_target, check_for_virus)
      while True:
        schedule.run_pending()
        time.sleep(1)   
