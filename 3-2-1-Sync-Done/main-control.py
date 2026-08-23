@@ -10,7 +10,6 @@ import json
 import time
 import schedule
 import functools
-from pytz import timezone
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import HttpResponseError
 from datetime import datetime
@@ -291,7 +290,7 @@ def retrieve_file(target_path, manifest_data):
                if file_path == path:
                   return info
                else:
-                  continue #I fixed it, I accidently had a return statement here from the inital construction of the program.
+                  continue #I fixed it, I accidently had a return statement here from the initial construction of the program.
             return None
     except ijson.common.IncompleteJSONError:
         print(f"ERROR! The manifest file {manifest_data} is corrupted. You must manually check it, as the program will not run to avoid overwriting this data.")

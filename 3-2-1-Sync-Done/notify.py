@@ -136,7 +136,7 @@ def alert_preferences(program):
         check_values = check_key and all(info.get(val) in values for val in keys)
         if not check_values:
             print("Missing or invalid values, deleting file and rebuilding.")
-            os.remalerove("alert_api_preferences.json")
+            os.remove("alert_api_preferences.json")
             rebuild(program, "alert")
             if program == "main-control":
                 return False 
