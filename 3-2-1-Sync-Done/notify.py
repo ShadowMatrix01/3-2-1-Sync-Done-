@@ -4,9 +4,16 @@ import requests
 import time
 import json
 import chime
+import logging
+import re
+import questionary
+from azure.storage.blob import BlobServiceClient
+from azure.core.exceptions import HttpResponseError
 from plyer import notification #now synchronous with plyer.
-from discord_webhook import DiscordWebhook,  DiscordEmbed
 from urllib.parse import urlparse 
+from pathlib import Path
+from dotenv import set_key
+from timezones import timezones_from_file
 def alert_sound():
     chime.theme('chime') 
     chime.info()
@@ -25,9 +32,9 @@ def main_menu(program):
         "vt_check": True
     }
     while True:
-        print("\nWelcome to the setup verification menu. \nFrom here, you can check if all three external services" 
-        " like Desktop Notifications, Discord Webhook Integration, and VirusTotal API are working, aswell as set preferences for webhook alerts.")
-        sel = input("\nPlease select from the following options by typing the corresponding letter:\nA.Desktop Notifications Check\nB.Discord Webhook Integration Check\nC.VirusTotal API Check\nD.Set Alert Preferences\nE.Exit the Menu\n")
+        print("\nWelcome to the setup verification menu. \nFrom here, you can check if all services" 
+        " such as Desktop Notifications are working the way you intend them to.")
+        sel = input("\nPlease select from the following options by typing the corresponding letter:\nA.)Desktop Notifications Check\nB.)Discord Webhook Integration Check\nC.)VirusTotal API Check\nD.)Set Alert Preferences\nE.)Azure Blob Storage Check\nF.)Set Auto-Schedule Preferences\nG.)Set Time and Timezone for Schedule\nH.)Exit the Menu\n")
         if sel.strip().upper() == "A":
            local_notification_check(program)
            break
@@ -41,11 +48,20 @@ def main_menu(program):
            alert_preferences(program)
            break
         elif sel.strip().upper() == "E":
+           azure_verify()
+           break
+        elif sel.strip().upper() == "F":
+           schedule_preferences(program)
+           break
+        elif sel.strip().upper() == "G":
+           schedule_time()
+           break
+        elif sel.strip().upper() == "H":
            exit()
         else:
            print("Invalid input. Please try again.")
            continue
-def rebuild(program):
+def rebuild(program, vers):
     if program == "main-control":
        value = "true"
     else:
@@ -56,8 +72,59 @@ def rebuild(program):
                 "virus_total_check":"false",
                 "first_run": value
     }
-    with open("alert_api_preferences.json", "w") as f:
-         json.dump(data, f, indent=4)
+    data_2 = {
+                "virus_check": "manual",
+                "quarantine": "manual"
+    }
+    if vers == "alert":
+        with open("alert_api_preferences.json", "w") as f:
+            json.dump(data, f, indent=4)
+    else:
+        with open("schedule_pref.json", "w") as f:
+             json.dump(data_2, f, indent=4)
+def format(input):
+    pattern = r"^(?:[01]\d|2[0-3]):[0-5]\d$"
+    #This pattern is so that my program auto-rejects invalid time.
+    m = re.match(pattern, input)
+    return (m is not None)
+    #https://stackoverflow.com/questions/50224919/best-way-to-ensure-that-user-input-confirms-with-specific-format-in-python
+def schedule_time():
+    try:
+        env_file = Path(".env")
+        time = os.getenv("TIME_IN_24_HOURS")
+        timezone = os.getenv("TIMEZONE_DST_AWARE")
+        while True:
+            print(f"\nPrinting Current Settings: \nTime: {time} \nTimezone: {timezone}")
+            sel = input("What value would you like to modify?\nA.)Time\nB.)Timezone\nC.)None, Exit\n")
+            if sel.strip().upper() == "A":
+               while True:
+                    sel_2 = input("Please enter a time (24 Hours) in the format HH:MM. Example: 03:30\n")
+                    result = format(sel_2)
+                    if not result:
+                        print("Error! Invalid input, please try again!")
+                        continue
+                    else:
+                        print(f"Success! Time has now been set to {sel_2}.")
+                        set_key(dotenv_path=env_file, key_to_set="TIME_IN_24_HOURS", value_to_set=sel_2)
+                        break
+            elif sel.strip().upper() == "B":
+                select = questionary.select(
+                    "Please select a timezone:",
+                    choices=timezones_from_file()
+                ).ask()
+                print(f"Success! Timezone has now been set to {select}.")
+                set_key(dotenv_path=env_file, key_to_set="TIMEZONE_DST_AWARE", value_to_set=select)
+                break
+               #https://github.com/tmbo/questionary
+            elif sel.strip().upper() == "C":
+                exit()
+            else:
+                print("\nInvalid input, please try again!")
+                continue
+        #https://saurabh-kumar.com/python-dotenv/reference/
+    except Exception as e:
+        print(f"Exception: {e}")
+        exit()
 def alert_preferences(program):
     global app_state
     keys = {"webhook_alerts", "local_alerts", "virus_total_check", "first_run"}
@@ -70,7 +137,7 @@ def alert_preferences(program):
         if not check_values:
             print("Missing or invalid values, deleting file and rebuilding.")
             os.remove("alert_api_preferences.json")
-            rebuild(program)
+            rebuild(program, "alert")
             if program == "main-control":
                 return False 
         else:
@@ -84,7 +151,7 @@ def alert_preferences(program):
                     print(f"{key}: {info[key]}")
                 while True: 
                     sel = input("\nWhat values would you like to modify?"
-                    "\nA.)Webhook Alerts\nB.)Local Notifications\nC.)VirusTotal API Check\nD.)Disable all features\nE.)Enable all features\nF.)Exit\n")
+                    "\nA.)Webhook Alerts\nB.)Local Notifications\nC.)VirusTotal API Check\nD.)Disable all features\nE.)Enable all features\nF.)None, Exit\n")
                     if sel == "A":
                         info["webhook_alerts"] = "false" if info.get("webhook_alerts") == "true" else "true"
                     elif sel == "B":
@@ -104,6 +171,7 @@ def alert_preferences(program):
                     else: 
                         print("\nInvalid input, please try again.")
                         continue 
+                    info["first_run"] = "false"    
                     with open("alert_api_preferences.json", "w") as f:
                         json.dump(info, f, indent=4)
                         print("\nPreferences updated successfully!\nNew Preferences:")
@@ -111,19 +179,153 @@ def alert_preferences(program):
                             print(f"{key}: {info[key]}")
                         break
             else:
-                return True   
+                if info["first_run"] == "false":
+                    return True
+                else:    
+                    return False   
     except FileNotFoundError:
         print("\nRebuilding alert_api_preferences.json")
-        rebuild(program)
+        rebuild(program, "alert")
         if program == "main-control":
             return False 
     except json.JSONDecodeError:
         print("\nInvalid json, rebuilding from scratch")
         os.remove("alert_api_preferences.json")
-        rebuild(program)
+        rebuild(program, "alert")
+        if program == "main-control":
+            return False  
+def schedule_preferences(program):
+    keys = {"virus_check", "quarantine"}
+    values = {"false", "manual", "true"}
+    try:
+        with open("schedule_pref.json", "r") as f:
+            info = json.load(f)
+        check_key = keys.issubset(info.keys())
+        check_values = check_key and all(info.get(val) in values for val in keys)
+        if not check_values:
+            print("Missing or invalid values, deleting file and rebuilding.")
+            os.remove("schedule_pref.json")
+            rebuild(program, "schedule")
+            if program == "main-control":
+                return False 
+        else:
+                print("\nPreferences file validated, printing current settings.")
+                for key in keys:
+                    print(f"{key}: {info[key]}")
+                if program == "main-control":
+                   return True
+                while True: 
+                    sel = input("\nWhat values would you like to modify?"
+                    "\nA.)Quarantine Preferences\nB.)VirusTotal Check Preferences\nC.)Disable Quarantining and VirusTotal Check\nD.)Enable Quarantining and VirusTotal Check\nE.)Make Quarantining and VirusTotal Check Manual\nF.)None, Exit\n")
+                    if sel == "A":
+                       while True:
+                           print("\nPlease select from the following options:")
+                           sel_2 = input("\nA.)Auto-Quarantine\nB.)Disable Quarantining\nC.)Manually Decide to Quarantine\nD.)None, Exit\n")
+                           match sel_2:
+                               case "A":
+                                   info["quarantine"] = "true"  
+                                   print("\nAuto-Quarantine Enabled")
+                                   break  
+                               case "B":
+                                   info["quarantine"] = "false"
+                                   print("\nAuto-Quarantine Disabled")
+                                   break
+                               case "C":
+                                   info["quarantine"] = "manual"
+                                   print("\nManual Quarantining Enabled")
+                                   break
+                               case "D":
+                                   break
+                               case _:
+                                   print("\nInvalid input, please try again")   
+                                   continue 
+                    elif sel == "B":
+                       while True:
+                           print("\nPlease select from the following options:")
+                           sel_2 = input("\nA.)Auto-Check with VirusTotal\nB.)Disable Checking with VirusTotal\nC.)Manually Decide to Check with VirusTotal\nD.)None, Exit\n")
+                           match sel_2:
+                               case "A":
+                                   info["virus_check"] = "true"
+                                   break    
+                               case "B":
+                                   info["virus_check"] = "false"
+                                   break
+                               case "C":
+                                   info["virus_check"] = "manual"
+                                   break
+                               case "D":
+                                   break
+                               case _:
+                                   print("\nInvalid input, please try again")   
+                                   continue                          
+                    elif sel == "C":
+                        info["virus_check"] = "false"
+                        info["quarantine"] = "false"
+                    elif sel == "D":
+                        info["virus_check"] = "true"
+                        info["quarantine"] = "true"
+                    elif sel == "E":
+                        info["virus_check"] = "manual"
+                        info["quarantine"] = "manual"  
+                    elif sel == "F":
+                        break       
+                    else: 
+                        print("\nInvalid input, please try again.")
+                        continue 
+                    with open("schedule_pref.json", "w") as f:
+                        json.dump(info, f, indent=4)
+                        print("\nPreferences updated successfully!\nNew Preferences:")
+                        for key in keys:
+                            print(f"{key}: {info[key]}")
+                        break
+    except FileNotFoundError:
+        print("\nRebuilding schedule_pref.json")
+        rebuild(program, "schedule")
         if program == "main-control":
             return False 
-    return 
+    except json.JSONDecodeError:
+        print("\nInvalid json, rebuilding from scratch")
+        os.remove("schedule_pref.json")
+        rebuild(program, "schedule")
+        if program == "main-control":
+            return False 
+def azure_verify():
+    logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+    logging.getLogger("azure.core.pipeline.transport").setLevel(logging.WARNING)
+    azure_connection_string = os.getenv("AZURE_CONNECT_STR")
+    azure_container_name = os.getenv("AZURE_CONTAINER")
+    azure_container_name_2 = os.getenv("AZURE_CONTAINER_QUARANTINE")
+    if not azure_connection_string:
+       print("Error: AZURE_CONNECT_STR not found. Please create a .env file based on .env example")
+       return
+    if not azure_container_name:
+       print("Error: AZURE_CONTAINER not found. Please create a .env file based on .env example")
+       return
+    if not azure_container_name_2:
+       print("Error: AZURE_CONTAINER_QUARANTINE not found. Please create a .env file based on .env example")
+       return
+    try:
+       blob_service_client = BlobServiceClient.from_connection_string(azure_connection_string)
+       print("Connection to Azure Blob Storage was successful...")
+       container_client = blob_service_client.get_container_client(container=azure_container_name)
+       if not container_client.exists():
+          print(f"Connection to source container {azure_container_name} was not successful.")
+          return
+       else:
+          print(f"Connection to source container {azure_container_name} was successful.")
+       container_client_2 = blob_service_client.get_container_client(container=azure_container_name_2)
+       if not container_client_2.exists():
+          print(f"Connection to quarantine container {azure_container_name_2} was not successful.")
+          return
+       else:
+         print(f"Connection to quarantine container {azure_container_name_2} was successful.")
+    except HttpResponseError as e:
+        print(f"Azure Container Error: {e.status_code}: {e.message}")
+        logging.error(f"Azure Container Error: {e.status_code}: {e}")
+    except Exception as e:
+        print(f"Unexpected Azure Error: {e}")
+        logging.error(f"Unexpected Azure Error: {e}")
 def local_notification_check(program): 
     #This funtion is now syncrhonous, WINRT will always complain regardless of what I attempt with async, 
     #making the program look like an error has happened when it hasn't. Even supressing the warning does not work since that

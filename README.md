@@ -61,6 +61,8 @@ Please note, Discord webhooks require a free Discord account. For more informati
 
 Chime 0.8.0 is a simple auditory cue system that is cross-compatible across different operating systems. This was added because sounds are not included with plyer, and I felt that auditory cues are needed. For more information, please visit: https://pypi.org/project/chime/
 
+Questionary 2.1.1 is a python library to build pretty command line user prompts. For more information please visit: https://pypi.org/project/questionary/
+
 Schedule 1.2.2 runs Python functions (or any other callable) periodically using a friendly syntax. It utilizes a simple-to-use API for scheduling jobs, has an in-process scheduler for periodic jobs, and is lightweight with no external dependencies. It is tested to run on Python 3.7, 3.8, 3.9, 3.10, 3.11, and 3.12. Schedule 1.2.2 utilizes the 24-hour clock, with the format HH: MM. For more information, please visit: https://pypi.org/project/schedule/
 
 Pytz-2026.3.post1 brings the Olson tz database into Python. This library allows accurate and cross-platform timezone calculations using Python 2.4 or higher. Almost all of the Olson time zones are supported. It also solves the issue of ambiguous times at the end of daylight saving time. In this application, I am using it in conjunction with schedule 1.2.2 to ensure that the program can run by itself on a daily basis. My program supports 594 pytz time zones, which can be found in the pytz_timezones.txt file. For more information, please visit: https://pypi.org/project/pytz/
@@ -98,8 +100,7 @@ To run the 3-2-1 Sync Done! application to verify the integrity of a specific fi
 
 5. Improperly formatted JSON will result in the program throwing errors. It is wise not to manually modify the manifest files, and instead copy them and place them somewhere secure, before creating new manifests.
 
-### Check if Local Notifications, Discord Webhook, and VirusTotal API are working as intended, MODE C.
-
+### Check if Local Notifications, Discord Webhook, Azure Storage Blobs, VirusTotal API are working as intended, Set Alert and Schedule Preferences, and Set Time and Timezone for Schedule, MODE C.
 Mode C allows you to check before running the program if everything is set up correctly. Mode C only requires two arguments, which are --source and --mode "C". However, unlike the other modes, source should be an empty string with a space " " since the program does not require a path to verify program functionality. To run this mode, simply enter the following into your terminal:
 
 #### Windows
@@ -108,7 +109,6 @@ Run this command: **python main-control.py --source " " --mode "C"**
 Run this command: **python3 main-control.py --source " " --mode "C"**
 
 From here, you will be prompted to select an option from a menu; please type the corresponding character.
-
 **A. Desktop Notifications Check**
 
 **B. Discord Webhook Integration Check**
@@ -117,7 +117,13 @@ From here, you will be prompted to select an option from a menu; please type the
 
 **D. Set Alert Preferences**
 
-**E. Exit the Menu**
+**E. Azure Blob Storage Check**
+
+**F. Set Auto-Schedule Preferences**
+
+**G. Set Time and Timezone for Schedule**
+
+**H. Exit**
 ### Hashing Files On The Cloud and Checking Integrity Of Files On The Cloud, MODES D1 AND D2.
 Ensure that your .env file is set up correctly before running the program. While the program can detect if improperly formatted fields and invalid credentials are supplied, it **CANNOT** detect if containers you supplied are flipped or the incorrect containers. Please verify this, as it may be quite tedious to manually move and delete blobs back to their intended location after the fact.
 
@@ -137,4 +143,4 @@ Please follow any input prompts the program may give you. If notifications and w
 -----------------------------------------------------------------------------------------------
 ## Miscellaneous
 At this stage of the project, I cannot make any promises that all features I intend to add will be able to be done. If this is the case, this ReadMe.md will be updated accordingly. This tool is for diagnostic purposes only and does not provide data recovery services. If data loss or corruption is detected, users should rely on their established backup restoration procedures or professional data recovery services. Thank you! 
-### **LAST UPDATED: August 21st, 2026.**
+### **LAST UPDATED: August 23rd, 2026.**
