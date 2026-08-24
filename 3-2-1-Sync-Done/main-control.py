@@ -10,6 +10,8 @@ import json
 import time
 import schedule
 import functools
+import questionary
+import re
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import HttpResponseError
 from datetime import datetime
@@ -17,14 +19,14 @@ from hashHOT import hash256_caller
 from json_control import json_writer, hash_compare, load_manifest
 from tqdm import tqdm
 from VT_online_check import online_check
-from notify import main_menu, local_notification_check, webhook_check, VT_check, alert_preferences, alert_sound, schedule_preferences
+from notify import main_menu, local_notification_check, webhook_check, vt_check, alert_preferences, alert_sound, schedule_preferences
 from plyer import notification
 from pytz import timezone
 load_dotenv()
 BATCH_SIZE = 4096 #Constant, because the amount of IO operations was slowing down the project by a lot.
 buffer_arr = {}
 write_now = False
-vt_check = False
+vt_check_2 = False
 local_notif = False
 webhook_notif = False
 EXCLUDED = ["manifest.json", "manifest2.json", "manifest_cloud.json", "manifest.log", "manifest2.log", "manifest_cloud.log", "VT_check.log", "VT_online_check.py"]     
@@ -34,7 +36,7 @@ def catch_exceptions(cancel_on_failure=False):
         def wrapper(*args, **kwargs):
             try:
                 return job_func(*args, **kwargs)
-            except:
+            except Exception:
                 import traceback
                 print(traceback.format_exc())
                 logging.critical(traceback.format_exc())
@@ -44,7 +46,14 @@ def catch_exceptions(cancel_on_failure=False):
     return catch_exceptions_decorator
 #I could not use standard exceptions, so decorator and wrapper taken from docs for scheduler.
 #https://schedule.readthedocs.io/en/stable/exception-handling.html
+# noinspection DuplicatedCode
 @catch_exceptions(cancel_on_failure=True)
+def preventer(directory):
+    os_pattern = r"^[a-zA-Z]:[/\\]|^/" #I added this because I noticed an edge case
+    #when I was testing my program, so this should prevent something like C:Users/Photos
+    if re.match(os_pattern, directory):
+       return True
+    return False
 def download_blob(extension, manifest_data, pref):
     global buffer_arr
     buffer_arr = {}
@@ -78,7 +87,7 @@ def download_blob(extension, manifest_data, pref):
                               mtime = data.get("mtime")
                               if mtime == cur_mtime and data.get("size") == file_size:
                                  blob_hash = data.get("hash")
-                                 manifest_updater_cloud(blob_name, blob_hash, cur_mtime, file_size, write_now=False)
+                                 manifest_updater_cloud(blob_name, blob_hash, cur_mtime, file_size, write_now_cloud=False)
                                  pbar.update(file_size)
                                  continue
                               else:
@@ -98,14 +107,18 @@ def download_blob(extension, manifest_data, pref):
                                  pbar.refresh() 
                                  while True:
                                        if pref is None:
-                                          pbar.write("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ")
                                           pbar.refresh() 
-                                          sel = input(" ").strip().upper()
+                                          sel = questionary.select(
+                                                "Select 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ",
+                                                 choices=["CON", "CONVT", "EXIT"]
+                                          ).ask()
                                        else:
                                           if pref == "manual":
-                                             pbar.write("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ")
                                              pbar.refresh() 
-                                             sel = input(" ").strip().upper()
+                                             sel = questionary.select(
+                                                   "Select 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ",
+                                                   choices=["CON", "CONVT", "EXIT"]
+                                             ).ask()
                                           elif pref == "false":
                                              sel = "CON"
                                           elif pref == "true":
@@ -121,10 +134,10 @@ def download_blob(extension, manifest_data, pref):
                                               sha256.update(chunk)
                                               pbar.update(len(chunk))
                                           file_hash = sha256.hexdigest()
-                                          manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now=False)
+                                          manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now_cloud=False)
                                           move_on = True
                                           break
-                                       elif sel == "CONVT" and vt_check:
+                                       elif sel == "CONVT" and vt_check_2:
                                           blob_client = container_client.get_blob_client(blob_name)
                                           stream_data = blob_client.download_blob()
                                           for chunk in stream_data.chunks():
@@ -134,56 +147,22 @@ def download_blob(extension, manifest_data, pref):
                                           pbar.write("\n\nPlease wait while the program checks the global virus database...")
                                           check = online_check(file_hash, blob_name, pbar, local_notif, webhook_notif, "online", blob_service_client, pref)
                                           if check == "likely_safe":
-                                             manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now=False)
+                                             manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now_cloud=False)
                                           elif check == "error":
-                                             logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
-                                             manifest_updater_cloud(None, None, None, None, write_now=True)
-                                             with open('manifest_cloud.json', 'r') as file:
-                                                           info = json.load(file)
-                                                           count = len(info)
-                                             logging.info(f"Successfully updated manifest_cloud.json with {count} entries, however issue with checking VT for blob {blob_name}.")
-                                             pbar.write("The program ran into an error when contacting the VirusTotal service. Please check VT_check.log for more information.")
-                                             pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the blobs before this one.")
-                                             time.sleep(5)
-                                             exit()
+                                             blob_updater_helper(check, pbar, blob_name)
                                           elif check == "rate":
-                                             logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
-                                             manifest_updater_cloud(None, None, None, None, write_now=True)
-                                             with open('manifest_cloud.json', 'r') as file:
-                                                           info = json.load(file)
-                                                           count = len(info)
-                                             logging.info(f"Successfully updated manifest_cloud.json with {count} entries, however issue with checking VT for blob {blob_name} due to rate limiting. ")
-                                             pbar.write(f"You have either exceeded the API quota, or VirusTotal is down. Program will save previous blobs (excluding this one) and quit.")
-                                             pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the blobs before this one.")
-                                             time.sleep(5)
-                                             exit()
+                                             blob_updater_helper(check, pbar, blob_name)
                                           elif check == "unexpected_error":                                             
-                                             logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
-                                             manifest_updater_cloud(None, None, None, None, write_now=True)
-                                             with open('manifest_cloud.json', 'r') as file:
-                                                           info = json.load(file)
-                                                           count = len(info)
-                                             logging.info(f"Successfully updated manifest_cloud.json with {count} entries, however issue with moving {blob_name} to quarantine.")
-                                             pbar.write(f"Either Azure may be down, or some unexpected event caused the program to stop. Please check the manifest_cloud.log file.")
-                                             pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the blobs before this one.")
-                                             time.sleep(5)
-                                             exit()                                 
+                                             blob_updater_helper(check, pbar, blob_name)
                                           elif check == "handled":
                                              pbar.clear()
                                              pbar.refresh()
                                           move_on = True
                                           break
                                        elif sel == "EXIT":
-                                          with open('manifest_cloud.json', 'r') as file:
-                                                           info = json.load(file)
-                                                           count = len(info)
-                                          logging.info(f"Successfully updated manifest_cloud.json with {count} entries, however user halted program for blob {blob_name}")
-                                          manifest_updater_cloud(None, None, None, None, write_now=True)
-                                          pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the blobs before this one.")
-                                          time.sleep(5)
-                                          exit()
+                                            blob_updater_helper("EXIT", pbar, blob_name)
                                        else:
-                                          if sel == "CONVT" and not vt_check:
+                                          if sel == "CONVT" and not vt_check_2:
                                              pbar.write("\n\nPlease setup VT in .env, and run mode C for setup validation.")
                                           else:
                                              pbar.write("\n\nInvalid input. Please try again.")
@@ -197,25 +176,37 @@ def download_blob(extension, manifest_data, pref):
                            sha256.update(chunk)
                            pbar.update(len(chunk))
                   file_hash = sha256.hexdigest()
-                  manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now=False)
-            except HttpResponseError as e:
-                print(f"Azure HTTP Error {e.status_code} on file {blob_name}: {e.message}")
-                logging.error(f"Azure HTTP Error {e.status_code} on {blob_name}: {e}")                  
+                  manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now_cloud=False)
+            except HttpResponseError as e_blob:
+                print(f"Azure HTTP Error {e_blob.status_code} on file {blob_name}: {e_blob.message}")
+                logging.error(f"Azure HTTP Error {e_blob.status_code} on {blob_name}: {e_blob}")
                 #https://pypi.org/project/azure-storage-blob/
                 #https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blobs-list-python
                 #https://learn.microsoft.com/en-us/python/api/azure-core/azure.core.exceptions?view=azure-python
                 #https://learn.microsoft.com/en-us/python/api/azure-storage-blob/azure.storage.blob.storagestreamdownloader?view=azure-python#azure-storage-blob-storagestreamdownloader-download-to-stream
-         manifest_updater_cloud(None, None, None, None, write_now=True)
+         manifest_updater_cloud(None, None, None, None, write_now_cloud=True)
          with open('manifest_cloud.json', 'r') as file:
-              info = json.load(file)
-              count = len(info)
+              info_blob = json.load(file)
+              count = len(info_blob)
          logging.info(f"Successfully updated manifest_cloud.json with {count} entries.")
-    except HttpResponseError as e:
-        print(f"Azure Container Error: {e.status_code}: {e.message}")
-        logging.error(f"Azure Container Error: {e.status_code}: {e}")
-    except Exception as e:
-        print(f"Unexpected Azure Error: {e}")
-        logging.error(f"Unexpected Azure Error: {e}")
+    except KeyboardInterrupt:
+       try:
+          print("Signal interrupt detected, saving previous blobs to manifest...")
+          manifest_updater_cloud(None, None, None, None, write_now_cloud=True)
+          with open('manifest_cloud.json', 'r') as file:
+                        info_blob = json.load(file)
+                        count = len(info_blob)
+          logging.info(f"Successfully updated manifest_cloud.json with {count} entries.")
+       except Exception as k:
+         print(f"Fatal Exception with trying to save blobs to manifest_cloud.json: {k}")
+         logging.critical(f"Fatal Exception with trying to save blobs to manifest_cloud.json: {k}")
+       exit()
+    except HttpResponseError as e_blob:
+        print(f"Azure Container Error: {e_blob.status_code}: {e_blob.message}")
+        logging.error(f"Azure Container Error: {e_blob.status_code}: {e_blob}")
+    except Exception as e_blob:
+        print(f"Unexpected Error: {e_blob}")
+        logging.error(f"Unexpected Error: {e_blob}")
 def validate(): #Because otherwise, invalid json would be accepted, so it is checked before anything.
     setup = alert_preferences("main-control")
     setup_2 = schedule_preferences("main-control")
@@ -227,8 +218,8 @@ def validate(): #Because otherwise, invalid json would be accepted, so it is che
        exit()
     global local_notif
     global webhook_notif
-    global vt_check
-    vt_check = VT_check("main-control")
+    global vt_check_2
+    vt_check_2 = vt_check("main-control")
     local_notif = local_notification_check("main-control")
     webhook_notif = webhook_check("main-control")
     if not os.path.exists("manifest.json") or os.path.getsize("manifest.json") == 0: 
@@ -245,24 +236,24 @@ def validate(): #Because otherwise, invalid json would be accepted, so it is che
         else:
            file = "manifest_cloud.json"
         try:
-            with open(file, 'r') as f:
-                 json.load(f)
+            with open(file, 'r') as valid:
+                 json.load(valid)
         except ijson.common.IncompleteJSONError:
             logging.basicConfig(level=logging.INFO, filename="loginfo.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
             print(f"ERROR! The manifest file {file} is corrupted. You must manually check it, as the program will not run to avoid overwriting this data.")
             print(f"This program will exit in 5 seconds for security reasons.")
             time.sleep(5)
             exit()
-        except Exception as e:
+        except Exception:
              logging.basicConfig(level=logging.INFO, filename="loginfo.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
              print(f"ERROR! The manifest file {file} is corrupted. You must manually check it, as the program will not run to avoid overwriting this data.")
              print(f"This program will exit in 5 seconds for security reasons.")
              time.sleep(5)
              exit()
 def create_manifest(path):
-    with open(path, "w") as f:
-         json.dump({}, f)
-def argCV():
+    with open(path, "w") as f_create:
+         json.dump({}, f_create)
+def arg_cv():
     #Command Line Interface CLI, similar to C which makes sense.
     #considering python is an interpreted language.
     arg = argparse.ArgumentParser(description="3-2-1 Sync Done! A Data Integrity Solution", formatter_class=argparse.RawTextHelpFormatter) #class because new line wasn't working.
@@ -285,12 +276,12 @@ def retrieve_file(target_path, manifest_data):
         exit()
     path = os.path.abspath(target_path)
     try:
-      with open(manifest_data, 'rb') as f:
-            for file_path, info in ijson.kvitems(f, ''):
+      with open(manifest_data, 'rb') as f2:
+            for file_path, info2 in ijson.kvitems(f2, ''):
                if file_path == path:
-                  return info
+                  return info2
                else:
-                  continue #I fixed it, I accidently had a return statement here from the initial construction of the program.
+                  continue #I fixed it, I accidentally had a return statement here from the initial construction of the program.
             return None
     except ijson.common.IncompleteJSONError:
         print(f"ERROR! The manifest file {manifest_data} is corrupted. You must manually check it, as the program will not run to avoid overwriting this data.")
@@ -309,13 +300,13 @@ def check_if_file_exists(file_path, manifest_data):
        print(f"\nLast known hash: {check['hash']}\nLast seen: {check['last_seen']}\nLast known modified time: {check['mtime']}\nLast known size: {check['size']} bytes.")
        logging.critical(f"ALERT! {file_path} was not found on the disk.\nLast known hash: {check['hash']}\nLast seen: {check['last_seen']}\nLast known modified time: {check['mtime']}\nLast known size: {check['size']} bytes.")
        return
-    hash = hash256_caller(file_path)
-    if hash == check['hash']:
+    hash_file = hash256_caller(file_path)
+    if hash_file == check['hash']:
        print(f"The file {file_path} was successfully verified. No changes have been detected from the manifest.")
        global buffer_arr #Global because buffer_arr needs to be accessed globally.
        stat = os.stat(file_path) #Just like C, with stat.
        buffer_arr[file_path] = {
-               "hash": hash,
+               "hash": hash_file,
                "last_seen": datetime.now().isoformat(),
                "mtime": round(stat.st_mtime, 4), 
                "size": stat.st_size
@@ -333,25 +324,87 @@ def total_size(directory, extension):
             if file in EXCLUDED:
                 continue
             #Unlike my previous way, this now shows the progress bar moving according to the size of the directory.
+            # noinspection bad-argument-type
             filepath = os.path.join(root, file)
             count += os.path.getsize(filepath)
     return count
-def source_updater(root, files, pbar, pref, manifest_name, manifest_data, this_one): #I added this because I didnt like how
+def blob_updater_helper(status2, pbar, blob_name_2):
+    log_msg = ""
+    pbar_msg_1 = ""
+    pbar_msg_2 = "The program will now exit in 5 seconds for security reasons, and will only save the blobs before this one."
+    logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+    try:
+        manifest_updater_cloud(None, None, None, None, write_now_cloud=True)
+        with open('manifest_cloud.json', 'r') as file:
+            info_blob = json.load(file)
+            count = len(info_blob)
+        match status2:
+            case "error":
+                log_msg = f"Successfully updated manifest_cloud.json with {count} entries, however issue with checking VT for blob {blob_name_2}."
+                pbar_msg_1 = "The program ran into an error when contacting the VirusTotal service. Please check VT_check.log for more information."
+            case "rate":
+                log_msg = f"Successfully updated manifest_cloud.json with {count} entries, however issue with checking VT for blob {blob_name_2} due to rate limiting. "
+                pbar_msg_1 = f"You have either exceeded the API quota, or VirusTotal is down. Program will save previous blobs (excluding this one) and quit."
+            case "unexpected_error":
+                log_msg = f"Successfully updated manifest_cloud.json with {count} entries, however issue with moving {blob_name_2} to quarantine."
+                pbar_msg_1 = f"Either Azure may be down, or some unexpected event caused the program to stop. Please check the manifest_cloud.log file."
+            case "EXIT":
+                log_msg = f"Successfully updated manifest_cloud.json with {count} entries, however user halted program for blob {blob_name_2}"
+                pbar_msg_1 = "User has halted program."
+            case _:
+                pass
+        logging.info(log_msg)
+        pbar.write(pbar_msg_1)
+        pbar.write(pbar_msg_2)
+        time.sleep(5)
+        exit()
+    except Exception as e_write:
+        print(f"Unexpected Error: {e_write}")
+        logging.error(f"Unexpected Error: {e_write}")
+def source_updater_helper(status3, pbar, manifest_file_2, file_name_2, this_one_2):
+   logging.basicConfig(level=logging.INFO, filename=f"{manifest_file_2}.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+   manifest_updater(None, None, write_now_updater=True, which_one=this_one_2)
+   with open(f'{manifest_file_2}.json', 'r') as file_source:
+        log_msg = ""
+        pbar_msg_1 = ""
+        pbar_msg_2 = "The program will now exit in 5 seconds for security reasons, and will only save the files before this one."
+        info_source = json.load(file_source)
+        count = len(info_source) 
+        match status3:
+            case "error":
+                log_msg = f"Successfully updated {manifest_file_2}.json with {count} entries, however issue with checking VT for file {file_name_2}."
+                pbar_msg_1 = "The program ran into an error when contacting the VirusTotal service. Please check VT_check.log for more information."
+            case "rate":
+                log_msg = f"Successfully updated {manifest_file_2}.json with {count} entries, however issue with checking VT for file {file_name_2} due to rate limiting. "
+                pbar_msg_1 = f"You have either exceeded the API quota, or VirusTotal is down. Program will save previous files (excluding this one) and quit."    
+            case "EXIT":
+                log_msg = f"Program has halted for data integrity purposes. Please check {manifest_file_2}.log"
+                pbar_msg_1 = "User has halted program."
+            case _:
+                pass
+        logging.info(log_msg)
+        pbar.write(pbar_msg_1)
+        pbar.write(pbar_msg_2)
+        time.sleep(5)
+        exit()
+# noinspection DuplicatedCode
+def source_updater(root, files, pbar, pref, manifest_name, manifest_data, this_one): #I added this because I didn't like how
     #before the log accumulated all errors, so now logging is specific to the given manifest file.
     if this_one == "source":
-       manifest = "manifest"
+       manifest_file = "manifest"
     else:
-       manifest = "manifest2"
+       manifest_file = "manifest2"
     for file in files:
         move_on = False
         if argv.ext and not file.endswith(argv.ext):
            continue
         if os.path.basename(file) in EXCLUDED:
            continue
+        # noinspection bad-argument-type
         file_path = os.path.normpath(os.path.join(root, file))
         try:
             f_stat = os.stat(file_path)
-            cur_mtime = round(f_stat.st_mtime, 4) #Avoids inconsentencies in floating point times.
+            cur_mtime = round(f_stat.st_mtime, 4) #Avoids inconsistencies in floating point times.
             cur_size = f_stat.st_size
         except OSError:
             continue
@@ -365,7 +418,7 @@ def source_updater(root, files, pbar, pref, manifest_name, manifest_data, this_o
         if hash_calc:
            status = hash_compare(file_path, hash_calc, manifest_data)
            if "new" in status: 
-                manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
+                manifest_updater(file_path, hash_calc, write_now_updater=False, which_one=this_one)
                 pbar.update(cur_size)
            elif "corrupted" in status:
                  if local_notif:
@@ -384,14 +437,18 @@ def source_updater(root, files, pbar, pref, manifest_name, manifest_data, this_o
                  pbar.refresh() 
                  while True:
                      if pref is None:
-                        pbar.write("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ")
                         pbar.refresh() 
-                        sel = input(" ").strip().upper()
+                        sel = questionary.select(
+                              "Select 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ",
+                               choices=["CON", "CONVT", "EXIT"]
+                        ).ask()
                      else:
                         if pref == "manual":
-                           pbar.write("Type 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ")
                            pbar.refresh() 
-                           sel = input(" ").strip().upper()
+                           sel = questionary.select(
+                                 "Select 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ",
+                                 choices=["CON", "CONVT", "EXIT"]
+                           ).ask()
                         elif pref == "false":
                            sel = "CON"
                         elif pref == "true":
@@ -401,40 +458,22 @@ def source_updater(root, files, pbar, pref, manifest_name, manifest_data, this_o
                            logging.warning("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
                            sel = "EXIT" 
                      if sel == "CON":
-                        manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
+                        manifest_updater(file_path, hash_calc, write_now_updater=False, which_one=this_one)
                         pbar.update(cur_size)
                         pbar.refresh() 
                         move_on = True
                         break
-                     elif sel == "CONVT" and vt_check:
+                     elif sel == "CONVT" and vt_check_2:
                         pbar.write("\n\nPlease wait while the program checks the global virus database...")
                         virus_check = online_check(hash_calc, file_path, pbar, local_notif, webhook_notif, "local", None, pref)
                         if virus_check == "likely_safe":
-                           manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
+                           manifest_updater(file_path, hash_calc, write_now_updater=False, which_one=this_one)
                            pbar.update(cur_size)
                            move_on = True
                         elif virus_check == "rate":
-                           logging.basicConfig(level=logging.INFO, filename=f"{manifest}.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
-                           manifest_updater(None, None, write_now=True, which_one=this_one)
-                           with open(f'{manifest}.json', 'r') as file:
-                                info = json.load(file)
-                                count = len(info)
-                           logging.info(f"Successfully updated {manifest}.json with {count} entries, however issue with checking VT for file {file_path} due to rate limiting. ")
-                           pbar.write(f"You have either exceeded the API quota, or VirusTotal is down. Program will save previous files (excluding this one) and quit.")
-                           pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the files before this one.")
-                           time.sleep(5)
-                           exit()   
+                           source_updater_helper(virus_check, pbar, manifest_file, file_path, this_one)
                         elif virus_check == "error":
-                           logging.basicConfig(level=logging.INFO, filename=f"{manifest}.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
-                           manifest_updater(None, None, write_now=True, which_one=this_one)
-                           with open(f'{manifest}.json', 'r') as file:
-                                 info = json.load(file)
-                                 count = len(info)
-                           logging.info(f"Successfully updated {manifest} with {count} entries, however issue with checking VT for file {file_path}.")
-                           pbar.write("The program ran into an error when contacting the VirusTotal service. Please check VT_check.log for more information.")
-                           pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the files before this one.")
-                           time.sleep(5)
-                           exit()
+                           source_updater_helper(virus_check, pbar, manifest_file, file_path, this_one)
                         elif "handled":
                              pbar.clear()
                              pbar.write(f"The suspicious file {file_path} was moved to the quarantine container. Continuing program operation...")
@@ -443,17 +482,9 @@ def source_updater(root, files, pbar, pref, manifest_name, manifest_data, this_o
                              move_on = True
                         break
                      elif sel == "EXIT":
-                        pbar.write(f"\n\nProgram quitting for data integrity purposes. Please check {manifest_name}.log")
-                        logging.basicConfig(level=logging.INFO, filename=f"{manifest}.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
-                        manifest_updater(None, None, write_now=True, which_one=this_one)
-                        with open(f'{manifest}.json', 'r') as file:
-                                 info = json.load(file)
-                                 count = len(info)
-                        logging.info(f"Successfully updated {manifest} with {count} entries, however user halted program for file {file_path}")
-                        pbar.write("The program will now exit in 5 seconds for security reasons, and will only save the files before this one.")
-                        exit()
+                        source_updater_helper("EXIT", pbar, manifest_file, file_path, this_one)
                      else:
-                        if sel == "CONVT" and not vt_check:
+                        if sel == "CONVT" and not vt_check_2:
                            pbar.write("\n\nPlease setup VT check in .env, and run mode C for setup validation.")
                         else:
                            pbar.write("\n\nInvalid input. Please try again.")
@@ -461,12 +492,12 @@ def source_updater(root, files, pbar, pref, manifest_name, manifest_data, this_o
                  if move_on:
                     continue
            elif "same" in status:
-                manifest_updater(file_path, hash_calc, write_now=False, which_one=this_one)
+                manifest_updater(file_path, hash_calc, write_now_updater=False, which_one=this_one)
                 pbar.update(cur_size)
         else:
           pbar.write(f"FAILURE: The following file {file} could not be hashed. Please check {manifest_name}.log for information.")  
           pbar.update(cur_size)
-def manifest_updater(file_path, hash_calc, write_now, which_one):
+def manifest_updater(file_path, hash_calc, write_now_updater, which_one):
     global buffer_arr #Global because buffer_arr needs to be accessed globally.
     if (file_path and hash_calc) and os.path.basename(file_path) not in EXCLUDED:
          stat = os.stat(file_path) #Just like C, with stat.
@@ -476,27 +507,29 @@ def manifest_updater(file_path, hash_calc, write_now, which_one):
                      "mtime": round(stat.st_mtime, 4), 
                      "size": stat.st_size
          }
-    if ((len(buffer_arr) % BATCH_SIZE == 0) or write_now) and buffer_arr: #Prevents edge case that was happening during testing.
+    if ((len(buffer_arr) % BATCH_SIZE == 0) or write_now_updater) and buffer_arr: #Prevents edge case that was happening during testing.
         if which_one == "source":
            json_writer(buffer_arr,"manifest.json")
         elif which_one == "target":
            json_writer(buffer_arr,"manifest2.json")
         buffer_arr = {}
-def manifest_updater_cloud(blob, hash, modified, size, write_now):
+def manifest_updater_cloud(blob, hash_cloud, modified, size, write_now_cloud):
    global buffer_arr
-   if (blob and hash) and blob not in EXCLUDED:
+   if (blob and hash_cloud) and blob not in EXCLUDED:
       buffer_arr[blob] = {
-                  "hash": hash,
+                  "hash": hash_cloud,
                   "last_seen": datetime.now().isoformat(),
                   "mtime": modified,
                   "size": size
       }
-   if ((len(buffer_arr) % BATCH_SIZE == 0) or write_now) and buffer_arr: 
+   if ((len(buffer_arr) % BATCH_SIZE == 0) or write_now_cloud) and buffer_arr:
       json_writer(buffer_arr, "manifest_cloud.json")
       buffer_arr = {}
 @catch_exceptions(cancel_on_failure=True)
 def a_mode(pref):
+   try:
        global buffer_arr
+       src_tgt = "source"
        logging.basicConfig(level=logging.INFO, filename="manifest.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
        #Using force, I was able to get the program to force logging correctly, because the logger ignores this unless its forced.
        print("Please wait while the program discovers the total size of the directory in bytes...")
@@ -504,35 +537,65 @@ def a_mode(pref):
        manifest_source = load_manifest("manifest.json")
        with tqdm(total=total, desc="Hashing files, please wait", colour="green", unit="B", unit_scale=True, unit_divisor=1024) as pbar:
              for root, dirs, files in os.walk(argv.source):
-                source_updater(root, files, pbar, pref, manifest_name="manifest", manifest_data=manifest_source, this_one="source")
-       manifest_updater(None, None, write_now=True, which_one="source")
+                source_updater(root, files, pbar, pref, manifest_name="manifest", manifest_data=manifest_source, this_one=src_tgt)
+       manifest_updater(None, None, write_now_updater=True, which_one=src_tgt)
        with open('manifest.json', 'r') as file:
-                     info = json.load(file)
-                     count = len(info)
+                     info_a = json.load(file)
+                     count = len(info_a)
        logging.info(f"Successfully updated manifest.json with {count} entries.")
        if argv.source2: #Because it would crash, for obvious reasons.
+          src_tgt = "target"
           logging.basicConfig(level=logging.INFO, filename="manifest2.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
           buffer_arr = {}
           print("Please wait while the program discovers the total size of the second directory in bytes...")
           total = total_size(argv.source2, argv.ext)
-          manifest_target = load_manifest("manifest2.json")
+          manifest_target_a = load_manifest("manifest2.json")
           with tqdm(total=total, desc="Hashing second batch of files, please wait", colour="blue", unit="B",  unit_scale=True, unit_divisor=1024) as pbar:
              for root, dirs, files in os.walk(argv.source2):
-                source_updater(root, files, pbar, pref, manifest_name="manifest2", manifest_data=manifest_target, this_one="target")
-          manifest_updater(None, None, write_now=True, which_one="target")
+                source_updater(root, files, pbar, pref, manifest_name="manifest2", manifest_data=manifest_target_a, this_one=src_tgt)
+          manifest_updater(None, None, write_now_updater=True, which_one=src_tgt)
           with open('manifest2.json', 'r') as file:
-                        info = json.load(file)
-                        count = len(info)
+                        info_a = json.load(file)
+                        count = len(info_a)
           logging.info(f"Successfully updated manifest2.json with {count} entries.")
        buffer_arr = {}
-argv = argCV()
+   except KeyboardInterrupt:
+          manifest_source_or_target = "manifest" if src_tgt == "source" else "manifest2"
+          try:
+             print("Signal interrupt detected, saving previous files to manifest...")
+             manifest_updater(None, None, write_now_updater=True, which_one=src_tgt)
+             with open(f'{manifest_source_or_target}.json', 'r') as file:
+                           info_blob = json.load(file)
+                           count = len(info_blob)
+             logging.info(f"Successfully updated {manifest_source_or_target}.json with {count} entries.")
+          except Exception as k:
+            print(f"Fatal Exception with trying to save files to {manifest_source_or_target}.json: {k}")
+            logging.critical(f"Fatal Exception with trying to save blobs to {manifest_source_or_target}: {k}")
+          exit()   
+argv = arg_cv()
 if argv.source == " " and not (argv.mode == "C" or argv.mode =="D1" or argv.mode == "D2"):
    print("ERROR: An empty string " " was provided. This is only allowed for mode C and mode D.")
    exit()
 if argv.mode == "A1":
+   test = preventer(argv.source)
+   if argv.source2:
+      test2 = preventer(argv.source2)
+   else:
+      test2 = True
+   if not test or not test2:
+      print("Error: Invalid format for directory. Valid example (Windows) C:/Users/Downloads or C:\\Users\\Downloads")
+      exit()
    validate()
    a_mode(None)
-elif argv.mode == "A2":
+elif argv.mode == "A2": 
+   test = preventer(argv.source)
+   if argv.source2:
+      test2 = preventer(argv.source2)
+   else:
+      test2 = True
+   if not test or not test2:
+      print("Error: Invalid format for directory. Valid example (Windows) C:/Users/Downloads or C:\\Users\\Downloads")
+      exit()
    time_task = os.getenv("TIME_IN_24_HOURS")
    timezone_task = os.getenv("TIMEZONE_DST_AWARE")
    if not time_task:
@@ -550,9 +613,13 @@ elif argv.mode == "A2":
       print(f"Exception: {e}")
       exit()
    schedule.every().day.at(time_task, timezone(timezone_task)).do(a_mode, check_for_virus)
-   while True:
-      schedule.run_pending()
-      time.sleep(1)
+   try:
+      while True:
+         schedule.run_pending()
+         time.sleep(1)
+   except KeyboardInterrupt:
+      print("Shutting down scheduler...")
+      exit()
 elif (argv.mode == "1B" or argv.mode == "2B") and not argv.source2:
      validate()
      if argv.mode == "1B":
