@@ -1,6 +1,7 @@
 import os
 import logging
 from dotenv import load_dotenv
+import questionary
 import requests
 import json
 import chime
@@ -45,25 +46,31 @@ def virus_webhook(file, count):
         else:
             return
     except Exception:
-        return   
+        return
+# noinspection DuplicatedCode
 def suspicious_file_log(file, response, dest):
    os.makedirs(dest, exist_ok=True)
    file_name = os.path.basename(file)
-   log = os.path.join(dest, f"{file_name}_report.log")     
+   log = os.path.join(dest, f"{file_name}_report.log")
    with open(log, "w", encoding="utf-8") as f:
-        time = datetime.now().isoformat()
-        f.write(f"{file} was marked as suspicious on {time}. \nResponse from VT: {response}") 
+        time_log = datetime.now().isoformat()
+        f.write(f"{file} was marked as suspicious on {time_log}. \nResponse from VT: {response}")
         json.dump(response, f, indent=4)
+# noinspection DuplicatedCode
 def suspicious_blob_log(blob, response, dest, source):
     os.makedirs(dest, exist_ok=True)
     log = os.path.join(dest, f"{blob}_report.log")     
     with open(log, "w", encoding="utf-8") as f:
-         time = datetime.now().isoformat()
-         f.write(f"{blob} was marked as suspicious on {time}. \nResponse from VT: {response}") 
+         time_blob = datetime.now().isoformat()
+         f.write(f"{blob} was marked as suspicious on {time_blob}. \nResponse from VT: {response}")
          json.dump(response, f, indent=4)  
     with open(file=log, mode="rb") as stream:
-         blob_client = source.upload_blob(name=f"{blob}_report.log", data=stream, overwrite=True)
-def online_check(hash, file, pbar, local_notif, webhook_notif, version, client, pref):
+         try:
+             source.upload_blob(name=f"{blob}_report.log", data=stream, overwrite=True)
+         except Exception as e:
+             print(f"Exception with uploading {blob}_report.log {e}")
+             logging.critical(f"Exception with uploading {blob}_report.log {e}")
+def online_check(hash_online, file, pbar, local_notif, webhook_notif, version, client, pref):
     base_url = os.getenv("URL")
     api_key = os.getenv("APIKEY")
     if not api_key:
@@ -72,7 +79,7 @@ def online_check(hash, file, pbar, local_notif, webhook_notif, version, client, 
     if not base_url:
         pbar.write("Error: URL not found. Please create a .env file based on .env.example")
         exit(1) 
-    full_url = f"{base_url}{hash}"
+    full_url = f"{base_url}{hash_online}"
     headers = {"accept": "application/json", #VT's docs says this is the way, which is different.
                 "x-apikey": api_key}
     try:
@@ -97,13 +104,14 @@ def online_check(hash, file, pbar, local_notif, webhook_notif, version, client, 
     except requests.exceptions.RequestException as e:
         pbar.write(f"API Error: {e}")
 def malicious(response_info, file, pbar, local_notif, webhook_notif, vers, blob_client, pref):
-    if isinstance(response_info, str): #If string, then it is an error code.
+    if isinstance(response_info, str): #If it is a string, then it is an error code.
        pbar.write(f"An error was encountered: {response_info}")
        logging.basicConfig(level=logging.WARNING, filename='VT_check.log', format='%(asctime)s - %(levelname)s: %(message)s', force=True)
        logging.error(f"An error was encountered: {response_info}")
        return "error"
     info = response_info.get("data",{}).get("attributes", {}).get("last_analysis_stats",{})
     count = info.get("malicious", 0)
+    # noinspection inconsistent-returns
     if count > 5:
        if local_notif:
           virus_local(file, count)
@@ -117,21 +125,26 @@ def quarantine_file(suspicious_file, count, resp, pbar, pref):
     quarantine_dir = "quarantine"
     os.makedirs(quarantine_dir, exist_ok=True)
     f = os.path.basename(suspicious_file)
+    # noinspection bad-argument-type
     dst = os.path.join(quarantine_dir, f)
     logging.critical(f"ALERT! The file {suspicious_file} has been flagged by {count} vendors as being suspicious.")
     pbar.write(f"ALERT!: This file {suspicious_file} is flagged as malicious by {count} vendors.")
     while True:
         if pref is None:
-           pbar.write("Enter 'Y' to move to quarantine folder, or 'N' if you believe this is a mistake: ")
-           move = input(" ").strip().upper()
+           move = questionary.select(
+                 "Select 'Y' to move to quarantine folder, or 'N' if you believe this is a mistake: ",
+                  choices=["Y", "N"]
+          ).ask()
         else:
            try:
                 with open("schedule_pref.json", "r") as f:
                          info = json.load(f)
                 move_option = info.get("quarantine") 
                 if move_option == "manual":
-                    pbar.write("Enter 'Y' to move to quarantine folder, or 'N' if you believe this is a mistake: ")
-                    move = input(" ").strip().upper()
+                    move = questionary.select(
+                           "Enter 'Y' to move to quarantine folder, or 'N' if you believe this is a mistake: ",
+                           choices=["Y", "N"]
+                    ).ask()
                 elif move_option == "true":
                     move = "Y"
                 elif move_option == "false":
@@ -149,8 +162,9 @@ def quarantine_file(suspicious_file, count, resp, pbar, pref):
                 #going to create specialized log with the vendors, and why it was flagged.
                 #Includes file name, date, expected hash, actual hash, and response from vt.
                 suspicious_file_log(suspicious_file, resp, dst)
+                # noinspection bad-argument-type
                 shutil.move(suspicious_file, dst)
-                pbar.write("File has succesfully been moved to quarantine.")
+                pbar.write("File has successfully been moved to quarantine.")
                 return "handled"
             except PermissionError:
                 pbar.write("FAILURE: Program lacks permissions to move this file to quarantine. Aborting move.")
@@ -176,16 +190,20 @@ def quarantine_file_cloud(blob, count, resp, pbar, client, pref):
     logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
     while True:
         if pref is None:
-           pbar.write("Enter 'Y' to move to quarantine container (cloud), or 'N' if you believe this is a mistake: ")
-           move = input(" ").strip().upper()
+           move =  questionary.select(
+                   "Enter 'Y' to move to quarantine folder (cloud), or 'N' if you believe this is a mistake: ",
+                   choices=["Y", "N"]
+        ).ask()
         else:
            try:
                 with open("schedule_pref.json", "r") as f:
                          info = json.load(f)
                 move_option = info.get("quarantine") 
                 if move_option == "manual":
-                    pbar.write("Enter 'Y' to move to quarantine container (cloud), or 'N' if you believe this is a mistake: ")
-                    move = input(" ").strip().upper()
+                    move = questionary.select(
+                           "Enter 'Y' to move to quarantine container (cloud), or 'N' if you believe this is a mistake: ",
+                           choices=["Y", "N"]
+                    ).ask()
                 elif move_option == "true":
                     move = "Y"
                 elif move_option == "false":

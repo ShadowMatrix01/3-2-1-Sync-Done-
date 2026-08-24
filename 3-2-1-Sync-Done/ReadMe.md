@@ -1,6 +1,6 @@
 # 3-2-1-Sync-Done!
 ## Project Overview
-3-2-1, Sync Done! Practically demonstrates core data protection strategies. It complements the industry-standard 3-2-1 data backup policy and focuses on data integrity. The project uses scripts, cloud and local storage, health checks, and storage alerts to support these principles and help prevent hardware failure, bit rot, ransomware, file tampering, synchronization failures, software bugs, and human error. 
+3-2-1, Sync Done! Practically demonstrates core data protection strategies. It complements the industry-standard 3-2-1 data backup policy and focuses on data integrity. The project uses scripts, cloud and local storage, health checks, and storage alerts to support these principles and help prevent hardware failure, data degradation, ransomware, file tampering, synchronization failures, software bugs, and human error. 
 
 -----------------------------------------------------------------------------------------------
 ## DISCLAIMER AND SETUP INSTRUCTIONS
@@ -40,13 +40,13 @@ To receive notifications from the app in Discord, please follow these steps:
 9. After verification is successful, you are done!
 
 **Azure Storage Blobs Setup**
-After creating you Azure account, and your Azure Blob Storage Account, please follow these steps:
+After creating your Azure account and your Azure Blob Storage Account, please follow these steps:
 1. Log in to the Azure portal and navigate to your storage account.
-2. On the left-hand menu, click access keys (under security + networking).
+2. On the left-hand menu, click Access Keys (under Security + networking).
 3. Copy the connection string under key1.
-5. Put this connection string in the .env file as AZURE_CONNECT_STR=YOUR_AZURE_CONNECTION_STRING
-6. Go to containers under data storage in your storage account and create two private containers.
-7. Once you have these two containers, put the source container with the blobs in the .env file as AZURE_CONTAINER=YOUR_AZURE_CONTAINER_NAME, and the container for quarantining and logging as AZURE_CONTAINER_QUARANTINE=YOUR_AZURE_QUARANTINE_CONTAINER_NAME
+4. Put this connection string in the .env file as AZURE_CONNECT_STR=YOUR_AZURE_CONNECTION_STRING
+5. Go to containers under data storage in your storage account and create two private containers.
+6. Once you have these two containers, put the source container with the blobs in the .env file as AZURE_CONTAINER=YOUR_AZURE_CONTAINER_NAME, and the container for quarantining and logging as AZURE_CONTAINER_QUARANTINE=YOUR_AZURE_QUARANTINE_CONTAINER_NAME
 
 
 ------------------------------------------------------------------------------------------------
@@ -55,17 +55,17 @@ This project is being made with **Python 3.12.1**, and as such uses tools and fr
 ### Tools
 Common tools in use include JavaScript Object Notation (**JSON**) for the manifest, the hashlib library for hashing files in the **SHA-256 (Secure Hash Algorithm 256-bit)** format, shutil for moving files to quarantine, stat for getting a files metdatata, and the built-in logging module which directly outputs detailed information to loginfo.log. 
 ### Frameworks/API/SDK/Other
-Plyer 2.1.0 and discord-webhook 1.4.1 are libraries that have been added to handle corrupted, tampered, and potentially malicious files by ensuring the user is not only immediately notified of an issue in the program itself, but also through the operating system's notification system and across multiple devices simultaneously through the use of Discord webhooks. This ensures that the user has a detailed log that they can reference later, should new or unusual behaviors be detected from a file or a blob, as well as ensuring the user's attention is immediately grabbed when a file is under review by the program. Plyer 2.1.0 is cross-platform, meaning that notifications will work between Windows, macOS, and Linux. 
+Plyer 2.1.0 and discord-webhook 1.4.1 are libraries added to handle corrupted, tampered, and potentially malicious files. This ensures the user is not only immediately notified of an issue in the program itself, but also through desktop notifications and multiple devices simultaneously via Discord webhooks. This ensures that the user has a detailed log that they can reference later, should new or unusual behaviors be detected from a file or a blob, as well as ensuring the user's attention is immediately grabbed when a file is under review by the program. Plyer 2.1.0 is cross-platform, meaning that notifications will work between Windows, macOS, and Linux. 
 
 Please note, Discord webhooks require a free Discord account. For more information, please click here: https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks
 
 Chime 0.8.0 is a simple auditory cue system that is cross-compatible across different operating systems. This was added because sounds are not included with plyer, and I felt that auditory cues are needed. For more information, please visit: https://pypi.org/project/chime/
 
-Questionary 2.1.1 is a python library to build pretty command line user prompts. For more information please visit: https://pypi.org/project/questionary/
+Questionary 2.1.1 is a Python library to build pretty command-line user prompts. For more information please visit: https://pypi.org/project/questionary/
 
-Schedule 1.2.2 runs Python functions (or any other callable) periodically using a friendly syntax. It utilizes a simple-to-use API for scheduling jobs, has an in-process scheduler for periodic jobs, and is lightweight with no external dependencies. It is tested to run on Python 3.7, 3.8, 3.9, 3.10, 3.11, and 3.12. Schedule 1.2.2 utilizes the 24-hour clock, with the format HH: MM. For more information, please visit: https://pypi.org/project/schedule/
+Schedule 1.2.2 runs Python functions (or any other callable) periodically using a friendly syntax. It utilizes a simple-to-use API for scheduling jobs, has an in-process scheduler for periodic jobs, and is lightweight with no external dependencies. It is tested to run on Python 3.7, 3.8, 3.9, 3.10, 3.11, and 3.12. Schedule 1.2.2 uses the 24-hour clock, with the format HH:MM. For more information, please visit: https://pypi.org/project/schedule/
 
-Pytz-2026.3.post1 brings the Olson tz database into Python. This library allows accurate and cross-platform timezone calculations using Python 2.4 or higher. Almost all of the Olson time zones are supported. It also solves the issue of ambiguous times at the end of daylight saving time. In this application, I am using it in conjunction with schedule 1.2.2 to ensure that the program can run by itself on a daily basis. My program supports 594 pytz time zones, which can be found in the pytz_timezones.txt file. For more information, please visit: https://pypi.org/project/pytz/
+Pytz-2026.3.post1 brings the Olson tz database into Python. This library enables accurate, cross-platform timezone calculations in Python 2.4 or higher. Almost all the Olson time zones are supported. It also solves the issue of ambiguous times at the end of daylight saving time. In this application, I am using it in conjunction with schedule 1.2.2 to ensure that the program can run by itself on a daily basis. My program supports 594 pytz time zones, which can be found in the pytz_timezones.txt file. For more information, please visit: https://pypi.org/project/pytz/
 
 Microsoft Azure Blob Storage SDK (azure-core 1.41.0 and azure-storage-blob 12.30.0) is used for the application's cloud features.  Azure Blob Storage uses data lakes, machine learning, and scalable technologies to ensure optimal performance with stored blobs. My application allows blobs (unstructured cloud files) to be hashed directly within the application. In addition to this, the 3-2-1-Sync-Done! application allows the same functionality present in the local version (hashing, scanning, moving, quarantining, logging, etc.) to be used with the cloud version. To utilize this, you **must** ensure that you have both a free Azure account and an Azure Blob Storage Account. In this account, you must have at least two containers; one of these is a normal container where blobs (files) will be stored. The other is the quarantine container, which is where potentially malicious blobs will be moved to with a corresponding log. You **must** ensure that these are put in the corresponding fields in the .env file, as mixing them up will result in normal blobs and potentially malicious blobs being put in the wrong place.
 
@@ -108,7 +108,8 @@ Run this command: **python main-control.py --source " " --mode "C"**
 #### macOS / Linux
 Run this command: **python3 main-control.py --source " " --mode "C"**
 
-From here, you will be prompted to select an option from a menu; please type the corresponding character.
+From here, you will be prompted to select an option from a menu; please use the arrow keys to navigate and press Enter to confirm.
+
 **A. Desktop Notifications Check**
 
 **B. Discord Webhook Integration Check**
@@ -143,4 +144,4 @@ Please follow any input prompts the program may give you. If notifications and w
 -----------------------------------------------------------------------------------------------
 ## Miscellaneous
 At this stage of the project, I cannot make any promises that all features I intend to add will be able to be done. If this is the case, this ReadMe.md will be updated accordingly. This tool is for diagnostic purposes only and does not provide data recovery services. If data loss or corruption is detected, users should rely on their established backup restoration procedures or professional data recovery services. Thank you! 
-### **LAST UPDATED: August 23rd, 2026.**
+### **LAST UPDATED: August 24th, 2026.**

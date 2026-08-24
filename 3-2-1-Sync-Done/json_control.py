@@ -13,19 +13,19 @@ def load_manifest(path): #Rewritten, because my old program was opening the mani
         except json.JSONDecodeError:
             logging.error(f"{path} is corrupted, rebuilding. Date and time: {datetime.now().isoformat()}")
             return {}
-def json_writer(hash, path):
+def json_writer(hash_json, path):
   global val
-  val = val + len(hash)
-  list = {}
-  if os.path.exists(path): #It was treating an empty manifest as corrupt, when not..
+  val = val + len(hash_json)
+  arr = {}
+  if os.path.exists(path): #It was treating an empty manifest as corrupt, when it wasn't.
      with open(path, 'r') as f:
         try:
-           list = json.load(f)
+           arr = json.load(f)
         except json.JSONDecodeError:
            logging.error(f"{path} is corrupted, rebuilding. Date and time: {datetime.now().isoformat()}")
-     list.update(hash)
+     arr.update(hash_json)
      with open(path, "w") as f:
-        json.dump(list, f, indent=4)
+        json.dump(arr, f, indent=4)
   else:
     print(f"{path} does not exist, creating {path} and exiting program.")
     logging.error(f"{path} does not exist, creating {path}! and exiting program")
