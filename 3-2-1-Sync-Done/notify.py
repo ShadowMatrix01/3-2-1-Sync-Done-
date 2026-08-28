@@ -437,7 +437,7 @@ def vt_check(program):
               exit()
            elif program == "main-control":
               print("Error: APIKEY not found. Please create a .env file based on .env.example")
-              print("The program will run in 5 seconds, but checking the hash with VirusTotal API will be disabled.")  
+              print("The program will run in 2 seconds, but checking the hash with VirusTotal API will be disabled.")  
               time.sleep(2)
               return False
        if not base_url or not url.scheme or not url.netloc:
@@ -446,7 +446,7 @@ def vt_check(program):
               exit() 
            elif program == "main-control":
               print("Error: URL not found. Please create a .env file based on .env.example") 
-              print("The program will run in 5 seconds, but checking the hash with VirusTotal API will be disabled.")  
+              print("The program will run in 2 seconds, but checking the hash with VirusTotal API will be disabled.")  
               time.sleep(2)
               return False
        # noinspection string-conversion-without-dunder-method
@@ -471,7 +471,7 @@ def vt_check(program):
                     return
                elif program == "main-control":
                     print("Authentication Error: Invalid API key.")
-                    print("The program will run in 5 seconds, but checking the hash with VirusTotal API will be disabled.")  
+                    print("The program will run in 2 seconds, but checking the hash with VirusTotal API will be disabled.")  
                     time.sleep(2)
                     return False
            elif response.status_code == 404:
@@ -481,7 +481,7 @@ def vt_check(program):
                     return
                elif program == "main-control":
                     print("Connection to VirusTotal API was not successful.")
-                    print("The program will run in 5 seconds, but checking the hash with VirusTotal API will be disabled.")  
+                    print("The program will run in 2 seconds, but checking the hash with VirusTotal API will be disabled.")  
                     time.sleep(2)
                     return False
            if program == "main-control":

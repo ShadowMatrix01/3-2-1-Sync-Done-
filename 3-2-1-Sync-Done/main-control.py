@@ -20,8 +20,10 @@ from json_control import json_writer, hash_compare, load_manifest
 from tqdm import tqdm
 from VT_online_check import online_check
 from notify import main_menu, local_notification_check, webhook_check, vt_check, alert_preferences, alert_sound, schedule_preferences
+from mover_manage import mover
 from plyer import notification
 from pytz import timezone
+from pathlib import Path
 load_dotenv()
 BATCH_SIZE = 4096 #Constant, because the amount of IO operations was slowing down the project by a lot.
 buffer_arr = {}
@@ -629,8 +631,10 @@ elif (argv.mode == "1B" or argv.mode == "2B") and not argv.source2:
         logging.basicConfig(level=logging.INFO, filename="manifest2.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
         manifest = "manifest2.json"
      check_if_file_exists(argv.source, manifest)
+     print(f"Program finished at {datetime.now()}")
 elif argv.mode == "C":
      main_menu("notify")
+     print(f"Program finished at {datetime.now()}")
 elif argv.mode == "D1":
      logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
      #I added this because the logging was excessive by default, so now only actual errors, not standard http request information will show up.
@@ -640,6 +644,7 @@ elif argv.mode == "D1":
      validate()
      manifest_target = load_manifest("manifest_cloud.json")
      download_blob(argv.ext, manifest_target, None)
+     print(f"Program finished at {datetime.now()}")
 elif argv.mode == "D2":
      time_task = os.getenv("TIME_IN_24_HOURS")
      timezone_task = os.getenv("TIMEZONE_DST_AWARE")
@@ -666,12 +671,29 @@ elif argv.mode == "D2":
      schedule.every().day.at(time_task, timezone(timezone_task)).do(download_blob, argv.ext, manifest_target, check_for_virus)
      while True:
        schedule.run_pending()
-       time.sleep(1)   
+       time.sleep(1)  
+elif argv.mode == "E1" and not argv.source2:
+     valid = preventer(argv.source)
+     if not valid:
+         print("Error: Invalid format for directory. Valid example (Windows) C:/Users/Downloads or C:\\Users\\Downloads")
+         exit()
+     mover(argv.source, "manifest")
+     print(f"Program finished at {datetime.now()}")
+elif argv.mode == "E2" and not argv.source2:
+     valid = preventer(argv.source)
+     if not valid:
+         print("Error: Invalid format for directory. Valid example (Windows) C:/Users/Downloads or C:\\Users\\Downloads")
+         exit()
+     mover(argv.source, "manifest2")
+     print(f"Program finished at {datetime.now()}")
+elif argv.mode == "E3" and not argv.source2:
+     print(f"Program finished at {datetime.now()}")
 else:
     if not argv.source2:
        print(f"{argv.mode} is not a valid mode. Please try again.")
     else:
        print(f"Please only use --source and not --source2. Thank you!")
+    print(f"Program finished at {datetime.now()}")
 #os.walk(): https://www.w3schools.com/python/ref_os_walk.asp
 #shebang: https://realpython.com/python-shebang/ 
 #Progress barhttps://tqdm.github.io/
