@@ -20,7 +20,7 @@ from json_control import json_writer, hash_compare, load_manifest
 from tqdm import tqdm
 from VT_online_check import online_check
 from notify import main_menu, local_notification_check, webhook_check, vt_check, alert_preferences, alert_sound, schedule_preferences
-from mover_manage import mover
+from mover_manage import mover, mover_2
 from plyer import notification
 from pytz import timezone
 from pathlib import Path
@@ -270,7 +270,10 @@ def arg_cv():
                      "\n[2B]: Checking the integrity of a specific file in a manifest2.json" 
                      "\n[C]: Check if Local Notifications, Discord Webhook, Azure Blob Storage, and VirusTotal API are working as intended (use a random string for --source)"
                      "\n[D1]: Hash, Verify, Quarantine Blobs from Cloud. (use a random string for --source)"
-                     "\n[D2]: Hash, Verify, Quarantine Blobs from Cloud using Schedule. (use a random string for --source)")
+                     "\n[D2]: Hash, Verify, Quarantine Blobs from Cloud using Schedule. (use a random string for --source)"
+                     "\n[E1]: Copy files from manifest.json to a given directory."
+                     "\n[E2]: Copy files from manifest2.json to a given directory."
+                     "\n[E3]: Copy blobs from manifest_cloud.json to a target container.")
     return arg.parse_args()
 def retrieve_file(target_path, manifest_data):
     if not os.path.exists(manifest_data) or os.path.getsize(manifest_data) == 0:
@@ -589,6 +592,7 @@ if argv.mode == "A1":
       exit()
    validate()
    a_mode(None)
+   print(f"Program finished at {datetime.now()}")
 elif argv.mode == "A2": 
    test = preventer(argv.source)
    if argv.source2:
@@ -615,6 +619,7 @@ elif argv.mode == "A2":
       print(f"Exception: {e}")
       exit()
    schedule.every().day.at(time_task, timezone(timezone_task)).do(a_mode, check_for_virus)
+   print(f"Program finished at {datetime.now()}")
    try:
       while True:
          schedule.run_pending()
@@ -669,6 +674,7 @@ elif argv.mode == "D2":
      validate()
      manifest_target = load_manifest("manifest_cloud.json")
      schedule.every().day.at(time_task, timezone(timezone_task)).do(download_blob, argv.ext, manifest_target, check_for_virus)
+     print(f"Program finished at {datetime.now()}")
      while True:
        schedule.run_pending()
        time.sleep(1)  
@@ -687,6 +693,10 @@ elif argv.mode == "E2" and not argv.source2:
      mover(argv.source, "manifest2")
      print(f"Program finished at {datetime.now()}")
 elif argv.mode == "E3" and not argv.source2:
+     logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
+     logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+     logging.getLogger("azure.core.pipeline.transport").setLevel(logging.WARNING)
+     mover_2()
      print(f"Program finished at {datetime.now()}")
 else:
     if not argv.source2:
