@@ -318,6 +318,7 @@ def azure_verify():
     azure_connection_string = os.getenv("AZURE_CONNECT_STR")
     azure_container_name = os.getenv("AZURE_CONTAINER")
     azure_container_name_2 = os.getenv("AZURE_CONTAINER_QUARANTINE")
+    azure_container_target = os.getenv("AZURE_CONTAINER_TARGET")
     if not azure_connection_string:
        print("Error: AZURE_CONNECT_STR not found. Please create a .env file based on .env example")
        return
@@ -327,6 +328,9 @@ def azure_verify():
     if not azure_container_name_2:
        print("Error: AZURE_CONTAINER_QUARANTINE not found. Please create a .env file based on .env example")
        return
+    if not azure_container_target:
+        print("Error: AZURE_CONTAINER_TARGET not found. Please create a .env file based on .env example")
+        return
     try:
        blob_service_client = BlobServiceClient.from_connection_string(azure_connection_string)
        print("Connection to Azure Blob Storage was successful...")
@@ -342,6 +346,12 @@ def azure_verify():
           return
        else:
          print(f"Connection to quarantine container {azure_container_name_2} was successful.")
+         container_client_target = blob_service_client.get_container_client(container=azure_container_target)
+         if not container_client_target.exists():
+            print(f"Connection to target container {azure_container_target} was not successful.")
+            return
+         else:
+            print(f"Connection to target container {azure_container_target} was successful.")
     except HttpResponseError as e:
         print(f"Azure Container Error: {e.status_code}: {e.message}")
         logging.error(f"Azure Container Error: {e.status_code}: {e}")
