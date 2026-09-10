@@ -131,7 +131,7 @@ def mover(app, directory, manifest):
         move_op = questionary.select(
             'What would you like with the files?',
              choices=[
-                  f"Copy All Files to {file_dir} ",
+                  f"Copy All Files to {file_dir}",
                   f"Manually Select Files to Copy to {file_dir}",
                   "Nothing, exit the program.",
              ]).ask()
@@ -227,7 +227,7 @@ def mover_2(app):
     move_op = questionary.select(
          'What would you like with the blobs?',
           choices=[
-            f"Copy All Blobs to {azure_container_target} ",
+            f"Copy All Blobs to {azure_container_target}",
             f"Manually Select Blob to Copy to {azure_container_target}",
             "Nothing, exit the program.",
           ]).ask()

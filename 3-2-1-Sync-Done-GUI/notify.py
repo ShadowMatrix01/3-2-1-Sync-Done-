@@ -24,7 +24,7 @@ app_state = {
     "vt_check": False
 }
 load_dotenv()
-def main_menu(program):
+def main_menu(app, program):
     global app_state
     app_state = {
         "local_notif": True,
@@ -32,37 +32,37 @@ def main_menu(program):
         "vt_check": True
     }
     while True:
-        print("\nWelcome to the setup verification menu. \nFrom here, you can check if all services" 
+        app.write_box("\nWelcome to the setup verification menu. \nFrom here, you can check if all services" 
         " such as Desktop Notifications are working the way you intend them to.")
         sel = questionary.select(
               "\nPlease select from the following options: \nA.)Desktop Notifications Check\nB.)Discord Webhook Integration Check\nC.)VirusTotal API Check\nD.)Set Alert Preferences\nE.)Azure Blob Storage Check\nF.)Set Auto-Schedule Preferences\nG.)Set Time and Timezone for Schedule\nH.)Exit the Menu\n",
               choices=["A", "B", "C", "D", "E", "F", "G", "H"]
               ).ask()
         if sel == "A":
-           local_notification_check(program)
+           local_notification_check(app, program)
            break
         elif sel  == "B":
-           webhook_check(program)
+           webhook_check(app, program)
            break
         elif sel  == "C":
-           vt_check(program)
+           vt_check(app, program)
            break
         elif sel == "D":
            alert_preferences(program)
            break
         elif sel == "E":
-           azure_verify()
+           azure_verify(app)
            break
         elif sel == "F":
            schedule_preferences(program)
            break
         elif sel == "G":
-           schedule_time()
+           schedule_time(app)
            break
         elif sel == "H":
            exit()
         else:
-           print("Invalid input. Please try again.")
+           app.write_box("Invalid input. Please try again.")
            continue
 def rebuild(program, vers):
     if program == "main-control":
@@ -92,7 +92,7 @@ def fmt(inp):
     # noinspection redundant-parentheses
     return (m is not None)
     #https://stackoverflow.com/questions/50224919/best-way-to-ensure-that-user-input-confirms-with-specific-format-in-python
-def schedule_time():
+def schedule_time(app):
     try:
         while True:
             env_file = Path(".env")
@@ -100,7 +100,7 @@ def schedule_time():
             time_sch = os.getenv("TIME_IN_24_HOURS")
             timezone = os.getenv("TIMEZONE_DST_AWARE")
             # noinspection string-conversion-without-dunder-method
-            print(f"\nPrinting Current Settings: \nTime: {time_sch} \nTimezone: {timezone}")
+            app.write_box(f"\nPrinting Current Settings: \nTime: {time_sch} \nTimezone: {timezone}")
             sel = questionary.select(
                   "What value would you like to modify?\nA.)Time\nB.)Timezone\nC.)None, Exit\n",
                   choices=["A", "B", "C"]
@@ -110,10 +110,10 @@ def schedule_time():
                     sel_2 = questionary.text("Please enter a time (24 Hours) in the format HH:MM. Example: 03:30\n").ask()
                     result = fmt(sel_2)
                     if not result:
-                        print("Error! Invalid input, please try again!")
+                        app.write_box("Error! Invalid input, please try again!")
                         continue
                     else:
-                        print(f"Success! Time has now been set to {sel_2}.")
+                        app.write_box(f"Success! Time has now been set to {sel_2}.")
                         set_key(dotenv_path=env_file, key_to_set="TIME_IN_24_HOURS", value_to_set=sel_2)
                         break
             elif sel == "B":
@@ -121,20 +121,20 @@ def schedule_time():
                     "Please select a timezone:",
                     choices=timezones_from_file()
                 ).ask()
-                print(f"Success! Timezone has now been set to {select}.")
+                app.write_box(f"Success! Timezone has now been set to {select}.")
                 set_key(dotenv_path=env_file, key_to_set="TIMEZONE_DST_AWARE", value_to_set=select)
                 continue
                #https://github.com/tmbo/questionary
             elif sel  == "C":
                 exit()
             else:
-                print("\nInvalid input, please try again!")
+                app.write_box("\nInvalid input, please try again!")
                 continue
         #https://saurabh-kumar.com/python-dotenv/reference/
     except Exception as e:
-        print(f"Exception: {e}")
+        app.write_box(f"Exception: {e}")
         exit()
-def alert_preferences(program):
+def alert_preferences(app, program):
     global app_state
     keys = {"webhook_alerts", "local_alerts", "virus_total_check", "first_run"}
     values = {"false", "true"}
@@ -144,7 +144,7 @@ def alert_preferences(program):
         check_key = keys.issubset(info.keys())
         check_values = check_key and all(info.get(val) in values for val in keys)
         if not check_values:
-            print("Missing or invalid values, deleting file and rebuilding.")
+            app.write_box("Missing or invalid values, deleting file and rebuilding.")
             os.remove("alert_api_preferences.json")
             rebuild(program, "alert")
             if program == "main-control":
@@ -155,9 +155,9 @@ def alert_preferences(program):
             app_state["webhook_notif"] = (info.get("webhook_alerts") == "true")
             app_state["vt_check"] = (info.get("virus_total_check") == "true")
             if program == "notify":
-                print("\nPreferences file validated, printing current settings.")
+                app.write_box("\nPreferences file validated, printing current settings.")
                 for key in keys:
-                    print(f"{key}: {info[key]}")
+                    app.write_box(f"{key}: {info[key]}")
                 while True: 
                     sel = questionary.select(
                           "\nWhat values would you like to modify?"
@@ -181,14 +181,14 @@ def alert_preferences(program):
                     elif sel == "F":
                         break       
                     else: 
-                        print("\nInvalid input, please try again.")
+                        app.write_box("\nInvalid input, please try again.")
                         continue 
                     info["first_run"] = "false"    
                     with open("alert_api_preferences.json", "w") as f:
                         json.dump(info, f, indent=4)
-                        print("\nPreferences updated successfully!\nNew Preferences:")
+                        app.write_box("\nPreferences updated successfully!\nNew Preferences:")
                         for key in keys:
-                            print(f"{key}: {info[key]}")
+                            app.write_box(f"{key}: {info[key]}")
                         break
             else:
                 if info["first_run"] == "false":
@@ -196,17 +196,17 @@ def alert_preferences(program):
                 else:    
                     return False   
     except FileNotFoundError:
-        print("\nRebuilding alert_api_preferences.json")
+        app.write_box("\nRebuilding alert_api_preferences.json")
         rebuild(program, "alert")
         if program == "main-control":
             return False 
     except json.JSONDecodeError:
-        print("\nInvalid json, rebuilding from scratch")
+        app.write_box("\nInvalid json, rebuilding from scratch")
         os.remove("alert_api_preferences.json")
         rebuild(program, "alert")
         if program == "main-control":
             return False  
-def schedule_preferences(program):
+def schedule_preferences(app, program):
     keys = {"virus_check", "quarantine"}
     values = {"false", "manual", "true"}
     try:
@@ -215,15 +215,15 @@ def schedule_preferences(program):
         check_key = keys.issubset(info.keys())
         check_values = check_key and all(info.get(val) in values for val in keys)
         if not check_values:
-            print("Missing or invalid values, deleting file and rebuilding.")
+            app.write_box("Missing or invalid values, deleting file and rebuilding.")
             os.remove("schedule_pref.json")
             rebuild(program, "schedule")
             if program == "main-control":
                 return False 
         else:
-                print("\nPreferences file validated, printing current settings.")
+                app.write_box("\nPreferences file validated, printing current settings.")
                 for key in keys:
-                    print(f"{key}: {info[key]}")
+                    app.write_box(f"{key}: {info[key]}")
                 if program == "main-control":
                    return True
                 while True: 
@@ -234,7 +234,7 @@ def schedule_preferences(program):
                     ).ask()                   
                     if sel == "A":
                        while True:
-                           print("\nPlease select from the following options:")
+                           app.write_box("\nPlease select from the following options:")
                            sel_2 = questionary.select(
                                    "\nPlease select from the following options:",
                                    "\nA.)Auto-Quarantine\nB.)Disable Quarantining\nC.)Manually Decide to Quarantine\nD.)None, Exit\n",
@@ -243,20 +243,20 @@ def schedule_preferences(program):
                            match sel_2:
                                case "A":
                                    info["quarantine"] = "true"  
-                                   print("\nAuto-Quarantine Enabled")
+                                   app.write_box("\nAuto-Quarantine Enabled")
                                    break  
                                case "B":
                                    info["quarantine"] = "false"
-                                   print("\nAuto-Quarantine Disabled")
+                                   app.write_box("\nAuto-Quarantine Disabled")
                                    break
                                case "C":
                                    info["quarantine"] = "manual"
-                                   print("\nManual Quarantining Enabled")
+                                   app.write_box("\nManual Quarantining Enabled")
                                    break
                                case "D":
                                    break
                                case _:
-                                   print("\nInvalid input, please try again")   
+                                   app.write_box("\nInvalid input, please try again")   
                                    continue 
                     elif sel == "B":
                        while True:
@@ -278,7 +278,7 @@ def schedule_preferences(program):
                                case "D":
                                    break
                                case _:
-                                   print("\nInvalid input, please try again")   
+                                   app.write_box("\nInvalid input, please try again")   
                                    continue                          
                     elif sel == "C":
                         info["virus_check"] = "false"
@@ -292,26 +292,26 @@ def schedule_preferences(program):
                     elif sel == "F":
                         break       
                     else: 
-                        print("\nInvalid input, please try again.")
+                        app.write_box("\nInvalid input, please try again.")
                         continue 
                     with open("schedule_pref.json", "w") as f:
                         json.dump(info, f, indent=4)
-                        print("\nPreferences updated successfully!\nNew Preferences:")
+                        app.write_box("\nPreferences updated successfully!\nNew Preferences:")
                         for key in keys:
-                            print(f"{key}: {info[key]}")
+                            app.write_box(f"{key}: {info[key]}")
                         break
     except FileNotFoundError:
-        print("\nRebuilding schedule_pref.json")
+        app.write_box("\nRebuilding schedule_pref.json")
         rebuild(program, "schedule")
         if program == "main-control":
             return False 
     except json.JSONDecodeError:
-        print("\nInvalid json, rebuilding from scratch")
+        app.write_box("\nInvalid json, rebuilding from scratch")
         os.remove("schedule_pref.json")
         rebuild(program, "schedule")
         if program == "main-control":
             return False 
-def azure_verify():
+def azure_verify(app):
     logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
     logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
     logging.getLogger("azure.core.pipeline.transport").setLevel(logging.WARNING)
@@ -320,51 +320,51 @@ def azure_verify():
     azure_container_name_2 = os.getenv("AZURE_CONTAINER_QUARANTINE")
     azure_container_target = os.getenv("AZURE_CONTAINER_TARGET")
     if not azure_connection_string:
-       print("Error: AZURE_CONNECT_STR not found. Please create a .env file based on .env example")
+       app.write_box("Error: AZURE_CONNECT_STR not found. Please create a .env file based on .env example")
        return
     if not azure_container_name:
-       print("Error: AZURE_CONTAINER not found. Please create a .env file based on .env example")
+       app.write_box("Error: AZURE_CONTAINER not found. Please create a .env file based on .env example")
        return
     if not azure_container_name_2:
-       print("Error: AZURE_CONTAINER_QUARANTINE not found. Please create a .env file based on .env example")
+       app.write_box("Error: AZURE_CONTAINER_QUARANTINE not found. Please create a .env file based on .env example")
        return
     if not azure_container_target:
-        print("Error: AZURE_CONTAINER_TARGET not found. Please create a .env file based on .env example")
+        app.write_box("Error: AZURE_CONTAINER_TARGET not found. Please create a .env file based on .env example")
         return
     try:
        blob_service_client = BlobServiceClient.from_connection_string(azure_connection_string)
-       print("Connection to Azure Blob Storage was successful...")
+       app.write_box("Connection to Azure Blob Storage was successful...")
        container_client = blob_service_client.get_container_client(container=azure_container_name)
        if not container_client.exists():
-          print(f"Connection to source container {azure_container_name} was not successful.")
+          app.write_box(f"Connection to source container {azure_container_name} was not successful.")
           return
        else:
-          print(f"Connection to source container {azure_container_name} was successful.")
+          app.write_box(f"Connection to source container {azure_container_name} was successful.")
        container_client_2 = blob_service_client.get_container_client(container=azure_container_name_2)
        if not container_client_2.exists():
-          print(f"Connection to quarantine container {azure_container_name_2} was not successful.")
+          app.write_box(f"Connection to quarantine container {azure_container_name_2} was not successful.")
           return
        else:
-         print(f"Connection to quarantine container {azure_container_name_2} was successful.")
+         app.write_box(f"Connection to quarantine container {azure_container_name_2} was successful.")
          container_client_target = blob_service_client.get_container_client(container=azure_container_target)
          if not container_client_target.exists():
-            print(f"Connection to target container {azure_container_target} was not successful.")
+            app.write_box(f"Connection to target container {azure_container_target} was not successful.")
             return
          else:
-            print(f"Connection to target container {azure_container_target} was successful.")
+            app.write_box(f"Connection to target container {azure_container_target} was successful.")
     except HttpResponseError as e:
-        print(f"Azure Container Error: {e.status_code}: {e.message}")
+        app.write_box(f"Azure Container Error: {e.status_code}: {e.message}")
         logging.error(f"Azure Container Error: {e.status_code}: {e}")
     except Exception as e:
-        print(f"Unexpected Azure Error: {e}")
+        app.write_box(f"Unexpected Azure Error: {e}")
         logging.error(f"Unexpected Azure Error: {e}")
-def local_notification_check(program): 
+def local_notification_check(app, program): 
     #This function is now synchronous, WINRT will always complain regardless of what I attempt with async,
     #making the program look like an error has happened when it hasn't. Even suppressing the warning does not work since that
     #is deprecated, as such this has been modified accordingly. It now uses the plyer notifications library, which is
     #also cross-platform.
     if program == "main-control" and not app_state["local_notif"]:
-        print("Desktop notifications are disabled.")  
+        app.write_box("Desktop notifications are disabled.")  
         time.sleep(2)
         return False 
     try:
@@ -377,29 +377,29 @@ def local_notification_check(program):
         alert_sound()
     except Exception:
         pass             
-    print("\nIf a message did not appear on your screen, it is likely notifications are disabled. \nPlease enable them or visit: https://pypi.org/project/plyer/")
+    app.write_box("\nIf a message did not appear on your screen, it is likely notifications are disabled. \nPlease enable them or visit: https://pypi.org/project/plyer/")
     # noinspection inconsistent-returns
     if program == "main-control":
         return True
-def webhook_check(program):
+def webhook_check(app, program):
     if program == "main-control" and not app_state["webhook_notif"]:
-        print("Webhook alerts are disabled.")  
+        app.write_box("Webhook alerts are disabled.")  
         time.sleep(2)
         return False 
     webhook_id = os.getenv("WEBHOOK")
     if webhook_id is None:
-       print("Error: WEBHOOK not found. Please create a .env file based on .env.example")
+       app.write_box("Error: WEBHOOK not found. Please create a .env file based on .env.example")
        if program == "main-control":
-          print("Webhook alerts are disabled.")  
+          app.write_box("Webhook alerts are disabled.")  
           time.sleep(2)
           return False
        # noinspection inconsistent-returns
        return
     url = urlparse(webhook_id)
     if not url.scheme or not url.netloc:
-       print("Invalid webhook URL format, please check .env.")
+       app.write_box("Invalid webhook URL format, please check .env.")
        if program == "main-control":
-          print("Webhook alerts are disabled.")  
+          app.write_box("Webhook alerts are disabled.")  
           time.sleep(2)
           return False
        # noinspection inconsistent-returns
@@ -408,33 +408,33 @@ def webhook_check(program):
         response = requests.get(webhook_id, timeout=5) #Modified because in testing the program
         #I realized it would be annoying to constantly receive message that it is working, instead of critical messages.
         if response and response.status_code in (200, 204):
-            print("Webhook was successful!")
+            app.write_box("Webhook was successful!")
             if program == "main-control":
                return True
             # noinspection inconsistent-returns
             return
         else:
-            print("Invalid webhook or connection error, please check .env.")
+            app.write_box("Invalid webhook or connection error, please check .env.")
             if program == "main-control":
-               print("Webhook alerts are disabled.")  
+               app.write_box("Webhook alerts are disabled.")  
                time.sleep(2)
                return False
             # noinspection inconsistent-returns
             return
     except Exception:
-        print(f"Invalid webhook or connection error, please check .env and loginfo.log.")
+        app.write_box(f"Invalid webhook or connection error, please check .env and loginfo.log.")
         if program == "main-control":
-           print("Webhook alerts are disabled.")  
+           app.write_box("Webhook alerts are disabled.")  
            time.sleep(2)
            return False
         # noinspection inconsistent-returns
         return
-def vt_check(program):
+def vt_check(app, program):
        if program == "main-control" and not app_state["vt_check"]:
-           print("Checking the hash with VirusTotal API is disabled.")  
+           app.write_box("Checking the hash with VirusTotal API is disabled.")  
            time.sleep(2)
            return False 
-       print("Please wait while the program connects to the VirusTotal API.")
+       app.write_box("Please wait while the program connects to the VirusTotal API.")
        time.sleep(2)
        hash_in = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f" #A SHA-256 hash of a known safe virus.
        base_url = os.getenv("URL")
@@ -443,20 +443,20 @@ def vt_check(program):
        url = urlparse(base_url)
        if not api_key:
            if program == "notify":
-              print("Error: APIKEY not found. Please create a .env file based on .env.example")
+              app.write_box("Error: APIKEY not found. Please create a .env file based on .env.example")
               exit()
            elif program == "main-control":
-              print("Error: APIKEY not found. Please create a .env file based on .env.example")
-              print("The program will run in 2 seconds, but checking the hash with VirusTotal API will be disabled.")  
+              app.write_box("Error: APIKEY not found. Please create a .env file based on .env.example")
+              app.write_box("The program will run in 2 seconds, but checking the hash with VirusTotal API will be disabled.")  
               time.sleep(2)
               return False
        if not base_url or not url.scheme or not url.netloc:
            if program == "notify":
-              print("Error: URL not found. Please create a .env file based on .env.example")
+              app.write_box("Error: URL not found. Please create a .env file based on .env.example")
               exit() 
            elif program == "main-control":
-              print("Error: URL not found. Please create a .env file based on .env.example") 
-              print("The program will run in 2 seconds, but checking the hash with VirusTotal API will be disabled.")  
+              app.write_box("Error: URL not found. Please create a .env file based on .env.example") 
+              app.write_box("The program will run in 2 seconds, but checking the hash with VirusTotal API will be disabled.")  
               time.sleep(2)
               return False
        # noinspection string-conversion-without-dunder-method
@@ -467,35 +467,35 @@ def vt_check(program):
            response = requests.get(full_url, headers=headers)
            if response.status_code == 429:
                if program == "notify":
-                    print("Rate limit reached. Please wait a moment.")
+                    app.write_box("Rate limit reached. Please wait a moment.")
                     # noinspection inconsistent-returns
                     return
                elif program == "main-control":
-                    print("Rate limit reached. Please wait a couple of seconds.")
+                    app.write_box("Rate limit reached. Please wait a couple of seconds.")
                     time.sleep(5)
                     return True
            elif response.status_code == 401:
                if program == "notify":
-                    print("Authentication Error: Invalid API key.")
+                    app.write_box("Authentication Error: Invalid API key.")
                     # noinspection inconsistent-returns
                     return
                elif program == "main-control":
-                    print("Authentication Error: Invalid API key.")
-                    print("The program will run in 2 seconds, but checking the hash with VirusTotal API will be disabled.")  
+                    app.write_box("Authentication Error: Invalid API key.")
+                    app.write_box("The program will run in 2 seconds, but checking the hash with VirusTotal API will be disabled.")  
                     time.sleep(2)
                     return False
            elif response.status_code == 404:
                if program == "notify":
-                    print("Connection to VirusTotal API was not successful.")
+                    app.write_box("Connection to VirusTotal API was not successful.")
                     # noinspection inconsistent-returns
                     return
                elif program == "main-control":
-                    print("Connection to VirusTotal API was not successful.")
-                    print("The program will run in 2 seconds, but checking the hash with VirusTotal API will be disabled.")  
+                    app.write_box("Connection to VirusTotal API was not successful.")
+                    app.write_box("The program will run in 2 seconds, but checking the hash with VirusTotal API will be disabled.")  
                     time.sleep(2)
                     return False
            if program == "main-control":
-              print("The program successfully connected to the VirusTotal API.")
+              app.write_box("The program successfully connected to the VirusTotal API.")
               time.sleep(2)
               return True
            response.raise_for_status() #https://stackoverflow.com/questions/61463224/when-to-use-raise-for-status-vs-status-code-testing
@@ -506,13 +506,13 @@ def vt_check(program):
            stats = attributes.get("last_analysis_stats", {})
            malicious_count = stats.get("malicious", 0)
            status = "Yes, Malicious" if malicious_count > 5 else "No, Clean"
-           print(f"Name: {name}")
-           print(f"Name: {hash_in}")
-           print(f"Is this malicious: {status} by ({malicious_count} detections)")
+           app.write_box(f"Name: {name}")
+           app.write_box(f"Name: {hash_in}")
+           app.write_box(f"Is this malicious: {status} by ({malicious_count} detections)")
        except requests.exceptions.RequestException as e:
-           print(f"API Error: {e}")
+           app.write_box(f"API Error: {e}")
            if program == "main-control":
-              print("Checking the hash with VirusTotal API is disabled.")  
+              app.write_box("Checking the hash with VirusTotal API is disabled.")  
               time.sleep(2)
               return False 
 #https://pypi.org/project/discord-webhook/
