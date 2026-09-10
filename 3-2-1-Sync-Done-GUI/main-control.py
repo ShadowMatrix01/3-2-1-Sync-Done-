@@ -57,8 +57,8 @@ def preventer(directory):
        return True
     return False
 def validate(): #Because otherwise, invalid json would be accepted, so it is checked before anything.
-    setup = alert_preferences("main-control")
-    setup_2 = schedule_preferences("main-control")
+    setup = alert_preferences(app, "main-control")
+    setup_2 = schedule_preferences(app, "main-control")
     if not setup or not setup_2:
        app.write_box("Sorry, but the program was unable to continue because it has detected a setup issue.")
        app.write_box("Please check .env file, and run mode C to validate the alert_api_preferences.json and schedule_pref.json files.")
@@ -68,9 +68,9 @@ def validate(): #Because otherwise, invalid json would be accepted, so it is che
     global local_notif
     global webhook_notif
     global vt_check_2
-    vt_check_2 = vt_check("main-control")
-    local_notif = local_notification_check("main-control")
-    webhook_notif = webhook_check("main-control")
+    vt_check_2 = vt_check(app, "main-control")
+    local_notif = local_notification_check(app, "main-control")
+    webhook_notif = webhook_check(app, "main-control")
     if not os.path.exists("manifest.json") or os.path.getsize("manifest.json") == 0: 
        create_manifest("manifest.json")
     if not os.path.exists("manifest2.json") or os.path.getsize("manifest2.json") == 0: 
@@ -207,7 +207,7 @@ def source_updater(app, root, files, pbar, pref, manifest_name, manifest_data, t
                         break
                      elif sel == "CONVT" and vt_check_2:
                         app.write_box("\n\nPlease wait while the program checks the global virus database...")
-                        virus_check = online_check(hash_calc, file_path, pbar, local_notif, webhook_notif, "local", None, pref)
+                        virus_check = online_check(app, hash_calc, file_path, pbar, local_notif, webhook_notif, "local", None, pref)
                         if virus_check == "likely_safe":
                            manifest_updater(file_path, hash_calc, write_now_updater=False, which_one=this_one)
                            pbar.update(cur_size)
@@ -405,7 +405,7 @@ def download_blob(app, extension, manifest_data, pref):
                                               pbar.update(len(chunk))
                                           file_hash = sha256.hexdigest()
                                           app.write_box("\n\nPlease wait while the program checks the global virus database...")
-                                          check = online_check(file_hash, blob_name, pbar, local_notif, webhook_notif, "online", blob_service_client, pref)
+                                          check = online_check(app, file_hash, blob_name, pbar, local_notif, webhook_notif, "online", blob_service_client, pref)
                                           if check == "likely_safe":
                                              manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now_cloud=False)
                                           elif check == "error":
@@ -615,6 +615,9 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.geometry("900x500")
+        self.title("3-2-1-Sync-Done!")
+        ctk.set_appearance_mode("dark")
+        #https://customtkinter.tomschimansky.com/documentation/color/ Added because it was unreadable in light mode.
         self.resizable(False, False)
         self.header_label = ctk.CTkLabel(
             master=self, 
@@ -627,12 +630,12 @@ class App(ctk.CTk):
                 values=["Mode A1", "Mode A2", "Mode 1B", "Mode 2B", "Mode C", "Mode D1", "Mode D2", "Mode E1", "Mode E2", "Mode E3"],
                 command=self.mode_return
                 )
-        self.dropdown.grid(row=3, column=0, padx=20, pady=20, sticky="w")
+        self.dropdown.grid(row=4, column=0, padx=20, pady=20, sticky="w")
         self.header_label.grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 20), sticky="ew")
         self.grid_rowconfigure(1, weight=1)  
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
-        self.textbox = ctk.CTkTextbox(master=self, width=400, corner_radius=0)
+        self.textbox = ctk.CTkTextbox(master=self, width=400, corner_radius=0, wrap="word")
         self.textbox.grid(row=1, column=0, columnspan=2, sticky="nsew")
         self.textbox.insert("0.0", "3--2-1 Sync Done! A Data Integrity Solution" 
                             "\n<-----------Overview of Modes and Functionality----------->"
@@ -640,7 +643,7 @@ class App(ctk.CTk):
                              "\n[A2]: Hash, Verify, and Quarantine Files using Schedule."
                              "\n[1B]: Checking the integrity of a specific file in manifest.json." 
                              "\n[2B]: Checking the integrity of a specific file in a manifest2.json" 
-                             "\n[C]: Check if Local Notifications, Discord Webhook, Azure Blob Storage, \nand VirusTotal API are working."
+                             "\n[C]: Check if Local Notifications, Discord Webhook, Azure Blob Storage, and VirusTotal API are working."
                              "\n[D1]: Hash, Verify, Quarantine Blobs from Cloud."
                              "\n[D2]: Hash, Verify, Quarantine Blobs from Cloud using Schedule."
                              "\n[E1]: Copy files from manifest.json to a given directory."
@@ -649,11 +652,11 @@ class App(ctk.CTk):
         self.textbox.configure(state="disabled")
         self.argv = Argv(mode=None, source=None, source2=None, ext=None)
         self.button = ctk.CTkButton(self, text="Start!", command=self.submit)
-        self.button.grid(row=3,column=1, padx=20, pady=20, sticky="e")
+        self.button.grid(row=4,column=1, padx=20, pady=20, sticky="e")
         self.progress_bar = ctk.CTkProgressBar(self,  progress_color="green")
         self.progress_bar.set(0)
         self.progress_bar.grid(
-         row=4,
+         row=5,
          column=0,
          columnspan=2,
          padx=20,
@@ -665,31 +668,75 @@ class App(ctk.CTk):
          text="Waiting to hash/verify/copy file(s)/blob(s)..."
         )
         self.progress_label.grid(
-         row=5,
+         row=6,
          column=0,
          columnspan=2,
          padx=20,
          pady=(0, 10)
         )
-        self.selected_label = ctk.CTkLabel(self,text="No File or Directory Selected")
+        self.dir_label = ctk.CTkFrame(
+           self,
+           border_width=2,
+           border_color="#D4AF37",
+           corner_radius=0,
+           fg_color="transparent"
+        )
+        self.dir_label.grid(
+           row=2,
+           column=0,
+           columnspan=2,
+           padx=0,
+           pady=(5, 0),
+           sticky="nsew"
+         )
+        self.dir_label.grid_columnconfigure(0, weight=1)
+        self.dir_label.grid_rowconfigure(0, weight=1)
+        self.selected_label = ctk.CTkLabel(self.dir_label,text="Source: No File or Directory Selected")
         self.selected_label.grid(
-         row=2,
+         row=0,
          column=0,
-         columnspan=2,
-         padx=20,
-         pady=(5, 0),
+         padx=10,
+         pady=5,
          sticky="nsew"
          )
-        self.message_box = ctk.CTkTextbox(self, width=280,corner_radius=0)
+        self.message_box = ctk.CTkTextbox(self, width=280,corner_radius=0, wrap="word")
         self.message_box.grid(
          row=0,
          column=2,
-         rowspan=6,
+         rowspan=7,
          padx=(0, 0),
          pady=0,
          sticky="nsew"
         )
         self.grid_columnconfigure(2, weight=1)
+        msg = "When the program runs, you will see relevant information here. \nTo temporarily check previous events, scroll up. \nTo view and analyze program events across different dates and times, please check the relevant log file."
+        self.message_box.insert("end", "\n" + msg)
+        self.message_box.configure(state="disabled")
+        self.dir_label_2 = ctk.CTkFrame(
+           self,
+           border_width=2,
+           border_color="#0032F9",
+           corner_radius=0,
+           fg_color="transparent"
+        )
+        self.dir_label_2.grid(
+           row=3,
+           column=0,
+           columnspan=2,
+           padx=0,
+           pady=(5, 0),
+           sticky="nsew"
+         )
+        self.dir_label_2.grid_columnconfigure(0, weight=1)
+        self.dir_label_2.grid_rowconfigure(0, weight=1)
+        self.selected_label_2 = ctk.CTkLabel(self.dir_label_2,text="Source2: No File or Directory Selected")
+        self.selected_label_2.grid(
+         row=0,
+         column=0,
+         padx=10,
+         pady=5,
+         sticky="nsew"
+         )
     def write_box(self, message):
         self.after(
                 0,
@@ -711,7 +758,7 @@ class App(ctk.CTk):
     def mode_return(self, value):
         self.button.configure(state="enabled")
         self.argv.mode = value
-        if value == "Mode A1" or value == "Mode A2" or value=="Mode E1" or value=="Mode E2" or value=="Mode E3":
+        if value == "Mode A1" or value == "Mode A2" or value=="Mode E1" or value=="Mode E2":
            self.folder_directory()
         elif value == "Mode 1B" or value == "Mode 2B":
            self.file_path()
@@ -753,7 +800,7 @@ class App(ctk.CTk):
            pass
     def run(self):
       if app.argv.source is None:
-          if app.argv.mode not in ["Mode C", "Mode D1", "Mode D2", "Mode E1", "Mode E2", "Mode E3"]:
+          if app.argv.mode not in ["Mode C", "Mode D1", "Mode D2", "Mode E3"]:
              app.write_box(f"ERROR: {app.argv.mode} requires a source argument.")
              return
       if app.argv.mode == "Mode A1":
@@ -815,7 +862,7 @@ class App(ctk.CTk):
          app.write_box(f"Program finished at {datetime.now()}")
          self.after(0, self.safe_destroy)
       elif app.argv.mode == "Mode C":
-         main_menu("notify")
+         main_menu(app, "notify")
          app.write_box(f"Program finished at {datetime.now()}")
          self.after(0, self.safe_destroy)
       elif app.argv.mode == "Mode D1":
@@ -873,7 +920,7 @@ class App(ctk.CTk):
          mover(app, app.argv.source, "manifest2")
          app.write_box(f"Program finished at {datetime.now()}")
          self.after(0, self.safe_destroy)
-      elif app.argv.mode == "Mode E3" and not app.argv.source2:
+      elif app.argv.mode == "Mode E3" and (not app.argv.source and not app.argv.source2):
          logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
          logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
          logging.getLogger("azure.core.pipeline.transport").setLevel(logging.WARNING)
