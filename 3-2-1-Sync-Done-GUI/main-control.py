@@ -18,7 +18,7 @@ from datetime import datetime
 from hashHOT import hash256_caller
 from json_control import json_writer, hash_compare, load_manifest
 from VT_online_check import online_check
-from notify import main_menu, local_notification_check, webhook_check, vt_check, alert_preferences, alert_sound, schedule_preferences
+from notify import notify_window,main_menu, local_notification_check, webhook_check, vt_check, alert_preferences, alert_sound, schedule_preferences
 from mover_manage import mover, mover_2
 from plyer import notification
 from pytz import timezone
@@ -619,23 +619,36 @@ class App(ctk.CTk):
         ctk.set_appearance_mode("dark")
         #https://customtkinter.tomschimansky.com/documentation/color/ Added because it was unreadable in light mode.
         self.resizable(False, False)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(2, weight=1)
+        self.left_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.left_frame.grid(
+            row=0,
+            column=0,
+            columnspan=2,
+            rowspan=7,
+            sticky="nsew"
+        )
+        self.left_frame.grid_rowconfigure(1, weight=1)
+        self.left_frame.grid_columnconfigure(0, weight=1)
+        self.left_frame.grid_columnconfigure(1, weight=1)
         self.header_label = ctk.CTkLabel(
-            master=self, 
+            master=self.left_frame, 
             text="3-2-1 Sync Done! A Data Integrity Solution", 
             font=("Helvetica", 20, "bold"), 
             text_color="#ffffff"      
         )
         self.dropdown = ctk.CTkOptionMenu(
-                master=self,
+                master=self.left_frame,
                 values=["Mode A1", "Mode A2", "Mode 1B", "Mode 2B", "Mode C", "Mode D1", "Mode D2", "Mode E1", "Mode E2", "Mode E3"],
                 command=self.mode_return
                 )
         self.dropdown.grid(row=4, column=0, padx=20, pady=20, sticky="w")
+        self.dropdown.set("Mode A1") #Added to prevent edge case that was crashing the program.
         self.header_label.grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 20), sticky="ew")
         self.grid_rowconfigure(1, weight=1)  
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
-        self.textbox = ctk.CTkTextbox(master=self, width=400, corner_radius=0, wrap="word")
+        self.textbox = ctk.CTkTextbox(master=self.left_frame, width=400, corner_radius=0, wrap="word")
         self.textbox.grid(row=1, column=0, columnspan=2, sticky="nsew")
         self.textbox.insert("0.0", "3--2-1 Sync Done! A Data Integrity Solution" 
                             "\n<-----------Overview of Modes and Functionality----------->"
@@ -650,10 +663,11 @@ class App(ctk.CTk):
                              "\n[E2]: Copy files from manifest2.json to a given directory."
                              "\n[E3]: Copy blobs from manifest_cloud.json to a target container.")
         self.textbox.configure(state="disabled")
-        self.argv = Argv(mode=None, source=None, source2=None, ext=None)
-        self.button = ctk.CTkButton(self, text="Start!", command=self.submit)
+        self.argv = Argv(mode="Mode A1", source=None, source2=None, ext=None)
+        self.button = ctk.CTkButton(self.left_frame, text="Start!", command=self.submit)
         self.button.grid(row=4,column=1, padx=20, pady=20, sticky="e")
-        self.progress_bar = ctk.CTkProgressBar(self,  progress_color="green")
+        self.button.configure(state="disabled")
+        self.progress_bar = ctk.CTkProgressBar(self.left_frame,  progress_color="green")
         self.progress_bar.set(0)
         self.progress_bar.grid(
          row=5,
@@ -664,7 +678,7 @@ class App(ctk.CTk):
          sticky="ew"
         )
         self.progress_label = ctk.CTkLabel(
-         self,
+         self.left_frame,
          text="Waiting to hash/verify/copy file(s)/blob(s)..."
         )
         self.progress_label.grid(
@@ -675,7 +689,7 @@ class App(ctk.CTk):
          pady=(0, 10)
         )
         self.dir_label = ctk.CTkFrame(
-           self,
+           self.left_frame,
            border_width=2,
            border_color="#D4AF37",
            corner_radius=0,
@@ -689,13 +703,27 @@ class App(ctk.CTk):
            pady=(5, 0),
            sticky="nsew"
          )
-        self.dir_label.grid_columnconfigure(0, weight=1)
+        self.dir_label.grid_columnconfigure(0, weight=0)
+        self.dir_label.grid_columnconfigure(1, weight=1)
         self.dir_label.grid_rowconfigure(0, weight=1)
-        self.selected_label = ctk.CTkLabel(self.dir_label,text="Source: No File or Directory Selected")
-        self.selected_label.grid(
+        self.browse_button = ctk.CTkButton(
+            self.dir_label,
+            text="Browse",
+            width=80,
+            command=self.folder_directory_a
+        )
+        self.browse_button.grid(
          row=0,
          column=0,
-         padx=10,
+         padx=(10, 5),
+         pady=5,
+         sticky="w"
+         )
+        self.selected_label = ctk.CTkEntry(self.dir_label, placeholder_text="Source: No Directory Selected")
+        self.selected_label.grid(
+         row=0,
+         column=1,
+         padx=(0, 10),
          pady=5,
          sticky="nsew"
          )
@@ -713,7 +741,7 @@ class App(ctk.CTk):
         self.message_box.insert("end", "\n" + msg)
         self.message_box.configure(state="disabled")
         self.dir_label_2 = ctk.CTkFrame(
-           self,
+           self.left_frame,
            border_width=2,
            border_color="#0032F9",
            corner_radius=0,
@@ -726,14 +754,28 @@ class App(ctk.CTk):
            padx=0,
            pady=(5, 0),
            sticky="nsew"
-         )
-        self.dir_label_2.grid_columnconfigure(0, weight=1)
+        )
+        self.dir_label_2.grid_columnconfigure(0, weight=0)
+        self.dir_label_2.grid_columnconfigure(1, weight=1)
         self.dir_label_2.grid_rowconfigure(0, weight=1)
-        self.selected_label_2 = ctk.CTkLabel(self.dir_label_2,text="Source2: No File or Directory Selected")
-        self.selected_label_2.grid(
+        self.browse_button_2 = ctk.CTkButton(
+           self.dir_label_2,
+           text="Browse",
+           width=80,
+           command=self.folder_directory_b
+        )
+        self.browse_button_2.grid(
          row=0,
          column=0,
-         padx=10,
+         padx=(10, 5),
+         pady=5,
+         sticky="w"
+        )
+        self.selected_label_2 = ctk.CTkEntry(self.dir_label_2, placeholder_text="Source2: No Directory Selected")
+        self.selected_label_2.grid(
+         row=0,
+         column=1,
+         padx=(0, 10),
          pady=5,
          sticky="nsew"
          )
@@ -741,39 +783,56 @@ class App(ctk.CTk):
         self.after(
                 0,
                 lambda: (
+                self.message_box.configure(state="normal"),
                 self.message_box.insert("end", "\n" + message),
-                self.message_box.see("end")
+                self.message_box.see("end"),
+                self.message_box.configure(state="disabled")
                 )
         )
-    def folder_directory(self):
+    def folder_directory_a(self):
         folder_path = filedialog.askdirectory(initialdir="/", title="Please select a directory.")
         if folder_path:
+           self.button.configure(state="normal")
            self.argv.source = folder_path
-           self.selected_label.configure(text=f"Directory Selected: {folder_path}")
+           self.selected_label.delete(0, "end")
+           self.selected_label.insert(0, folder_path)
         else:
            self.argv.source = None
-           self.selected_label.configure(text=f"Please Select A Valid Directory")
+           self.selected_label.delete(0, "end")
            self.button.configure(state="disabled")
            return False 
+    def folder_directory_b(self):
+        folder_path = filedialog.askdirectory(initialdir="/", title="Please select a directory.")
+        if folder_path:
+           self.argv.source2 = folder_path
+           self.selected_label_2.delete(0, "end")
+           self.selected_label_2.insert(0, folder_path)
+        else:
+           self.argv.source2 = None
+           self.selected_label_2.delete(0, "end")
+           return False 
     def mode_return(self, value):
-        self.button.configure(state="enabled")
+        self.button.configure(state="disabled")
         self.argv.mode = value
         if value == "Mode A1" or value == "Mode A2" or value=="Mode E1" or value=="Mode E2":
-           self.folder_directory()
-        elif value == "Mode 1B" or value == "Mode 2B":
-           self.file_path()
-        else:
            pass
+        elif value == "Mode 1B" or value == "Mode 2B":
+           pass
+        else:
+           self.button.configure(state="normal")
     def mode(self):
         self.dropdown.grid()
     def file_path(self):
         file_path = filedialog.askopenfilename()
         if file_path:
+           self.button.configure(state="normal")
            self.argv.source = file_path
-           self.selected_label.configure(text=f"File Selected: {file_path}")
+           self.selected_label.delete(0, "end")
+           self.selected_label.insert(0, file_path)
         else:
            self.argv.source = None
-           self.selected_label.configure(text=f"Please Select a Valid File")
+           self.selected_label.delete(0, "end")
+           self.selected_label.insert(0, "Please Select a Valid File")
            self.button.configure(state="disabled")
            return False
     def submit(self):
@@ -825,7 +884,7 @@ class App(ctk.CTk):
          if not test or not test2:
             app.write_box("Error: Invalid format for directory. Valid example (Windows) C:/Users/Downloads or C:\\Users\\Downloads")
             exit()
-         time_task = os.getenv("TIME_IN_24_HOURS")
+         time_task = os.getenv("TIME_IN_24_HOURS_LOCAL")
          timezone_task = os.getenv("TIMEZONE_DST_AWARE")
          if not time_task:
             app.write_box("Error: Time not provided. Please create a .env file based on .env example")
@@ -842,6 +901,7 @@ class App(ctk.CTk):
             app.write_box(f"Exception: {e}")
             exit()
          schedule.every().day.at(time_task, timezone(timezone_task)).do(a_mode, app, check_for_virus)
+         app.write_box(f"Mode A2 scheduled successfully for {time_task} ({timezone_task}).")
          try:
             while True:
                schedule.run_pending()
@@ -862,9 +922,11 @@ class App(ctk.CTk):
          app.write_box(f"Program finished at {datetime.now()}")
          self.after(0, self.safe_destroy)
       elif app.argv.mode == "Mode C":
-         main_menu(app, "notify")
-         app.write_box(f"Program finished at {datetime.now()}")
-         self.after(0, self.safe_destroy)
+         self.withdraw()
+         self.mode_c_window = notify_window(self)
+         #main_menu(app, "notify")
+         #app.write_box(f"Program finished at {datetime.now()}")
+         #self.after(0, self.safe_destroy)
       elif app.argv.mode == "Mode D1":
          logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
          #I added this because the logging was excessive by default, so now only actual errors, not standard http request information will show up.
@@ -877,7 +939,7 @@ class App(ctk.CTk):
          app.write_box(f"Program finished at {datetime.now()}")
          self.after(0, self.safe_destroy)
       elif app.argv.mode == "Mode D2":
-         time_task = os.getenv("TIME_IN_24_HOURS")
+         time_task = os.getenv("TIME_IN_24_HOURS_CLOUD")
          timezone_task = os.getenv("TIMEZONE_DST_AWARE")
          if not time_task:
                app.write_box("Error: Time not provided. Please create a .env file based on .env example")
@@ -900,7 +962,7 @@ class App(ctk.CTk):
          validate()
          manifest_target = load_manifest("manifest_cloud.json")
          schedule.every().day.at(time_task, timezone(timezone_task)).do(download_blob, app, app.argv.ext, manifest_target, check_for_virus)
-         app.write_box(f"Program finished at {datetime.now()}")
+         app.write_box(f"Mode D2 scheduled successfully for {time_task} ({timezone_task}).")
          while True:
             schedule.run_pending()
             time.sleep(1)  
