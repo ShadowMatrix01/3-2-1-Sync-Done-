@@ -94,29 +94,41 @@ def fmt(inp):
     #https://stackoverflow.com/questions/50224919/best-way-to-ensure-that-user-input-confirms-with-specific-format-in-python
 def schedule_time():
     try:
-        while True:
+       while True:
             env_file = Path(".env")
             load_dotenv(env_file, override=True)
-            time_sch = os.getenv("TIME_IN_24_HOURS")
+            time_sch = os.getenv("TIME_IN_24_HOURS_LOCAL")
+            time_sch_2 = os.getenv("TIME_IN_24_HOURS_CLOUD")
             timezone = os.getenv("TIMEZONE_DST_AWARE")
             # noinspection string-conversion-without-dunder-method
             print(f"\nPrinting Current Settings: \nTime: {time_sch} \nTimezone: {timezone}")
             sel = questionary.select(
-                  "What value would you like to modify?\nA.)Time\nB.)Timezone\nC.)None, Exit\n",
-                  choices=["A", "B", "C"]
+                  "What value would you like to modify?\nA.)Local Scheduler Time\nB.)Cloud Scheduler Time\nC.)Timezone\nD.)None, Exit\n",
+                  choices=["A", "B", "C", "D"]
                 ).ask()
             if sel == "A":
                while True:
-                    sel_2 = questionary.text("Please enter a time (24 Hours) in the format HH:MM. Example: 03:30\n").ask()
+                    sel_2 = questionary.text("Please enter a time (24 Hours) in the format HH:MM for local scheduler. Example: 03:30\n").ask()
                     result = fmt(sel_2)
                     if not result:
                         print("Error! Invalid input, please try again!")
                         continue
                     else:
                         print(f"Success! Time has now been set to {sel_2}.")
-                        set_key(dotenv_path=env_file, key_to_set="TIME_IN_24_HOURS", value_to_set=sel_2)
+                        set_key(dotenv_path=env_file, key_to_set="TIME_IN_24_HOURS_LOCAL", value_to_set=sel_2)
                         break
             elif sel == "B":
+               while True:
+                    sel_3 = questionary.text("Please enter a time (24 Hours) in the format HH:MM for cloud scheduler. Example: 03:30\n").ask()
+                    result = fmt(sel_3)
+                    if not result:
+                        print("Error! Invalid input, please try again!")
+                        continue
+                    else:
+                        print(f"Success! Time has now been set to {sel_2}.")
+                        set_key(dotenv_path=env_file, key_to_set="TIME_IN_24_HOURS_CLOUD", value_to_set=sel_3)
+                        break
+            elif sel == "C":
                 select = questionary.select(
                     "Please select a timezone:",
                     choices=timezones_from_file()
@@ -125,7 +137,7 @@ def schedule_time():
                 set_key(dotenv_path=env_file, key_to_set="TIMEZONE_DST_AWARE", value_to_set=select)
                 continue
                #https://github.com/tmbo/questionary
-            elif sel  == "C":
+            elif sel  == "D":
                 exit()
             else:
                 print("\nInvalid input, please try again!")
