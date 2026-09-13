@@ -7,6 +7,7 @@ import chime
 import logging
 import re
 import questionary
+import customtkinter as ctk
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import HttpResponseError
 from plyer import notification #now synchronous with plyer.
@@ -97,26 +98,38 @@ def schedule_time(app):
         while True:
             env_file = Path(".env")
             load_dotenv(env_file, override=True)
-            time_sch = os.getenv("TIME_IN_24_HOURS")
+            time_sch = os.getenv("TIME_IN_24_HOURS_LOCAL")
+            time_sch_2 = os.getenv("TIME_IN_24_HOURS_CLOUD")
             timezone = os.getenv("TIMEZONE_DST_AWARE")
             # noinspection string-conversion-without-dunder-method
             app.write_box(f"\nPrinting Current Settings: \nTime: {time_sch} \nTimezone: {timezone}")
             sel = questionary.select(
-                  "What value would you like to modify?\nA.)Time\nB.)Timezone\nC.)None, Exit\n",
-                  choices=["A", "B", "C"]
+                  "What value would you like to modify?\nA.)Local Scheduler Time\nB.)Cloud Scheduler Time\nC.)Timezone\nD.)None, Exit\n",
+                  choices=["A", "B", "C", "D"]
                 ).ask()
             if sel == "A":
                while True:
-                    sel_2 = questionary.text("Please enter a time (24 Hours) in the format HH:MM. Example: 03:30\n").ask()
+                    sel_2 = questionary.text("Please enter a time (24 Hours) in the format HH:MM for local scheduler. Example: 03:30\n").ask()
                     result = fmt(sel_2)
                     if not result:
                         app.write_box("Error! Invalid input, please try again!")
                         continue
                     else:
                         app.write_box(f"Success! Time has now been set to {sel_2}.")
-                        set_key(dotenv_path=env_file, key_to_set="TIME_IN_24_HOURS", value_to_set=sel_2)
+                        set_key(dotenv_path=env_file, key_to_set="TIME_IN_24_HOURS_LOCAL", value_to_set=sel_2)
                         break
             elif sel == "B":
+               while True:
+                    sel_3 = questionary.text("Please enter a time (24 Hours) in the format HH:MM for cloud scheduler. Example: 03:30\n").ask()
+                    result = fmt(sel_3)
+                    if not result:
+                        app.write_box("Error! Invalid input, please try again!")
+                        continue
+                    else:
+                        app.write_box(f"Success! Time has now been set to {sel_2}.")
+                        set_key(dotenv_path=env_file, key_to_set="TIME_IN_24_HOURS_CLOUD", value_to_set=sel_3)
+                        break
+            elif sel == "C":
                 select = questionary.select(
                     "Please select a timezone:",
                     choices=timezones_from_file()
@@ -125,7 +138,7 @@ def schedule_time(app):
                 set_key(dotenv_path=env_file, key_to_set="TIMEZONE_DST_AWARE", value_to_set=select)
                 continue
                #https://github.com/tmbo/questionary
-            elif sel  == "C":
+            elif sel  == "D":
                 exit()
             else:
                 app.write_box("\nInvalid input, please try again!")
@@ -515,6 +528,95 @@ def vt_check(app, program):
               app.write_box("Checking the hash with VirusTotal API is disabled.")  
               time.sleep(2)
               return False 
+class notify_window(ctk.CTkToplevel):
+      def __init__(self, parent):
+            super().__init__(parent)
+            self.parent = parent
+            self.geometry("900x500")
+            self.title("Setup Manager")
+            self.resizable(False, False)
+            self.protocol("WM_DELETE_WINDOW", self.close_mode_c)
+            self.left_frame = ctk.CTkFrame(self, fg_color="transparent")
+            self.left_frame.grid(
+                row=0,
+                column=0,
+                columnspan=2,
+                rowspan=7,
+                sticky="nsew"
+            )
+            self.title_label = ctk.CTkLabel(
+            self.left_frame,
+            text="Setup Manager for 3-2-1 Sync-Done!",
+            font=("Helvetica", 20, "bold"),
+            text_color="#ffffff"
+            )
+            self.title_label.grid(
+                row=0,
+                column=0,
+                columnspan=2,
+                padx=20,
+                pady=(20, 20),
+                sticky="ew"
+            )
+            self.menu_text = ctk.CTkTextbox(self.left_frame, width=400, height=250, corner_radius=0, wrap="word")
+            self.menu_text.grid(row=1, column=0, columnspan=2, sticky="nsew")
+            self.menu_text.insert("0.0", "Welcome to the setup verification menu. \nFrom here, you can check if all services "
+             "such as Desktop Notifications, connecting to VirusTotal's API, or Azure Blob Storage Credentials are working the way you intend them to."
+            "\n\nPlease select from the following options:"
+            "\nA.)Desktop Notifications Check"
+            "\nB.)Discord Webhook Integration Check"
+            "\nC.)VirusTotal API Check"
+            "\nD.)Set Alert Preferences"
+            "\nE.)Azure Blob Storage Check"
+            "\nF.)Set Auto-Schedule Preferences"
+            "\nG.)Set Time and Timezone for Schedule"
+            "\nH.)Return to the Main Menu")
+            self.menu_text.configure(state="disabled")
+            self.message_box = ctk.CTkTextbox(self, width=280,corner_radius=0, wrap="word")
+            self.message_box.grid(
+                row=0,
+                column=2,
+                rowspan=7,
+                padx=(0, 0),
+                pady=0,
+                sticky="nsew"
+                )
+            self.time = ctk.CTkEntry(
+                self.left_frame,
+                placeholder_text="Exclusive to Option G: Set Time (24 HOURS, FORMAT: HH:MM)"
+            )
+            self.time.grid(
+                row=2,
+                column=0,
+                columnspan=1,
+                padx=(5, 0),
+                pady=(5, 0),
+                sticky="ew"
+            )
+            self.time.configure(state="disabled")
+            self.time_button = ctk.CTkButton(
+            self.left_frame,
+            text="Set Time"
+            )
+            self.time_button.grid(
+                row=2,
+                column=1,
+                padx=(5, 5),
+                pady=(5, 0)
+            )
+            self.time_button.configure(state="disabled")
+            self.left_frame.grid_columnconfigure(0, weight=1)
+            self.left_frame.grid_columnconfigure(1, weight=0)
+            self.grid_columnconfigure(0, weight=1)
+            self.grid_columnconfigure(1, weight=1)
+            self.grid_columnconfigure(2, weight=1)
+            self.grid_rowconfigure(1, weight=1)
+            msg = "When the program runs, you will see relevant information here. \nTo temporarily check previous events, scroll up. \nTo view and analyze program events across different dates and times, please check the relevant log file."
+            self.message_box.insert("end", "\n" + msg)
+            self.message_box.configure(state="disabled")
+      def close_mode_c(self):
+            self.destroy()
+            self.parent.deiconify()
 #https://pypi.org/project/discord-webhook/
 #https://pypi.org/project/plyer/
 #https://pypi.org/project/chime/
