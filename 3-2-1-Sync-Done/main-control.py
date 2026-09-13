@@ -602,7 +602,7 @@ elif argv.mode == "A2":
    if not test or not test2:
       print("Error: Invalid format for directory. Valid example (Windows) C:/Users/Downloads or C:\\Users\\Downloads")
       exit()
-   time_task = os.getenv("TIME_IN_24_HOURS")
+   time_task = os.getenv("TIME_IN_24_HOURS_LOCAL")
    timezone_task = os.getenv("TIMEZONE_DST_AWARE")
    if not time_task:
       print("Error: Time not provided. Please create a .env file based on .env example")
@@ -619,7 +619,7 @@ elif argv.mode == "A2":
       print(f"Exception: {e}")
       exit()
    schedule.every().day.at(time_task, timezone(timezone_task)).do(a_mode, check_for_virus)
-   print(f"Program finished at {datetime.now()}")
+   print(f"Mode A2 scheduled successfully for {time_task} ({timezone_task}).")
    try:
       while True:
          schedule.run_pending()
@@ -651,7 +651,7 @@ elif argv.mode == "D1":
      download_blob(argv.ext, manifest_target, None)
      print(f"Program finished at {datetime.now()}")
 elif argv.mode == "D2":
-     time_task = os.getenv("TIME_IN_24_HOURS")
+     time_task = os.getenv("TIME_IN_24_HOURS_CLOUD")
      timezone_task = os.getenv("TIMEZONE_DST_AWARE")
      if not time_task:
           print("Error: Time not provided. Please create a .env file based on .env example")
@@ -674,7 +674,7 @@ elif argv.mode == "D2":
      validate()
      manifest_target = load_manifest("manifest_cloud.json")
      schedule.every().day.at(time_task, timezone(timezone_task)).do(download_blob, argv.ext, manifest_target, check_for_virus)
-     print(f"Program finished at {datetime.now()}")
+     print(f"Mode D2 scheduled successfully for {time_task} ({timezone_task}).")
      while True:
        schedule.run_pending()
        time.sleep(1)  
