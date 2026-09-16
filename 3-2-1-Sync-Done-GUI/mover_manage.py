@@ -2,13 +2,12 @@ import os
 import logging
 import json
 import shutil
-import time
-import questionary
 import ijson
+import customtkinter as ctk
+from tkinter import filedialog
 from dotenv import load_dotenv
 from datetime import datetime
 from pathlib import Path
-from tqdm import tqdm
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import HttpResponseError
 load_dotenv()
@@ -25,14 +24,12 @@ def inner_validate(app, file):
             logging.basicConfig(level=logging.INFO, filename="loginfo.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
             app.write_box(f"ERROR! The manifest file {file} is corrupted. You must manually check it, as the program will not run to avoid overwriting this data.")
             app.write_box("This program will exit in 5 seconds for security reasons.")
-            time.sleep(5)
-            exit()
+            return
     except Exception:
              logging.basicConfig(level=logging.INFO, filename="loginfo.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
              app.write_box(f"ERROR! The manifest file {file} is corrupted. You must manually check it, as the program will not run to avoid overwriting this data.")
              app.write_box("This program will exit in 5 seconds for security reasons.")
-             time.sleep(5)
-             exit()
+             return
 def mover_helper(app, directory_2, manifest_2):
     global inner
     global break_outer
@@ -41,7 +38,134 @@ def mover_helper(app, directory_2, manifest_2):
     break_outer = False
     switch_dir = False
     app.write_box(f"Program restarting for directory {directory_2}.")
-    mover(directory_2, manifest_2)
+    mover(app, directory_2, manifest_2)
+def disk_space_choice(app, file):
+    choice = {"value": None}
+    window = ctk.CTkToplevel(app)
+    window.title("Insufficient Disk Space")
+    window.geometry("500x300")
+    window.resizable(False, False)
+    window.grab_set()
+    file_name = Path(file).name
+    if len(file_name) > 40:
+       file_name = file_name[:37] + "..."
+    label = ctk.CTkLabel(
+        window,
+        text=f"Not enough space to copy {file_name}.\nPlease select an option:"
+    )
+    label.grid(row=0, column=0, padx=10, pady=20)
+    dropdown = ctk.CTkOptionMenu(
+        window,
+        values=[
+            f"Copy all files before {file_name}",
+            "Specify a new directory",
+            "Exit"
+        ]
+    )
+    dropdown.grid(row=1, column=0, padx=10, pady=10)
+    dropdown.set(f"Copy all files before {file_name}")
+    def confirm():
+        choice["value"] = dropdown.get()
+        window.destroy()
+    button = ctk.CTkButton(
+        window,
+        text="Confirm",
+        command=confirm
+    )
+    button.grid(row=2, column=0, padx=10, pady=20)
+    window.protocol("WM_DELETE_WINDOW", window.destroy)
+    app.wait_window(window)
+    return choice["value"]
+def select_files(app, arr, title, item_type):
+    selected = []
+    window = ctk.CTkToplevel(app)
+    window.title(title)
+    window.geometry("500x500")
+    window.resizable(False, False)
+    window.grab_set()
+    label = ctk.CTkLabel(
+        window,
+        text=f"Please select the {item_type} you would like to copy:"
+    )
+    label.grid(row=0, column=0, padx=10, pady=10)
+    scroll_frame = ctk.CTkScrollableFrame(
+        window,
+        width=450,
+        height=350
+    )
+    scroll_frame.grid(
+        row=1,
+        column=0,
+        padx=10,
+        pady=10,
+        sticky="nsew"
+    )
+    checkboxes = []
+    for index, item in enumerate(arr):
+        checkbox = ctk.CTkCheckBox(
+            scroll_frame,
+            text=item
+        )
+        checkbox.grid(
+            row=index,
+            column=0,
+            padx=10,
+            pady=5,
+            sticky="w"
+        )
+        checkboxes.append((item, checkbox))
+    def confirm():
+        selected.clear()
+        for item, checkbox in checkboxes:
+            if checkbox.get() == 1:
+                selected.append(item)
+        window.destroy()
+    button = ctk.CTkButton(
+        window,
+        text="Confirm Selection",
+        command=confirm
+    )
+    button.grid(row=2, column=0, padx=10, pady=10)
+    scroll_frame.grid_columnconfigure(0, weight=1)
+    window.grid_columnconfigure(0, weight=1)
+    window.grid_rowconfigure(1, weight=1)
+    window.protocol("WM_DELETE_WINDOW", window.destroy)
+    app.wait_window(window)
+    return selected
+def move_choice(app, item_type):
+    choice = {"value": None}
+    window = ctk.CTkToplevel(app)
+    window.title("Move Options")
+    window.geometry("450x250")
+    window.resizable(False, False)
+    window.grab_set()
+    label = ctk.CTkLabel(
+        window,
+        text=f"What would you like to do with the {item_type}?"
+    )
+    label.grid(row=0, column=0, padx=10, pady=10)
+    dropdown = ctk.CTkOptionMenu(
+        window,
+        values=[
+            f"Copy All {item_type}",
+            f"Manually Select {item_type}",
+            "Nothing, exit"
+        ]
+    )
+    dropdown.grid(row=1, column=0, padx=10, pady=10)
+    dropdown.set(f"Copy All {item_type}")
+    def confirm():
+        choice["value"] = dropdown.get()
+        window.destroy()
+    button = ctk.CTkButton(
+        window,
+        text="Confirm",
+        command=confirm
+    )
+    button.grid(row=2, column=0, padx=10, pady=20)
+    window.protocol("WM_DELETE_WINDOW", window.destroy)
+    app.wait_window(window)
+    return choice["value"]
 def mover(app, directory, manifest):
      global inner
      global break_outer
@@ -54,8 +178,7 @@ def mover(app, directory, manifest):
         dir_size = disk_total.free
      else:
         app.write_box(f"The directory {file_dir} does not exist.\nThe program will now exit in 5 seconds.")
-        time.sleep(5)
-        exit()
+        return
      arr = []
      failed_arr = []
      total_size = 0
@@ -65,26 +188,23 @@ def mover(app, directory, manifest):
         try:
             if os.path.getsize(f'{manifest}.json') == 0:
                app.write_box(f"The program cannot run, as there are no entries in {manifest}.json. \nThe program will now exit in 5 seconds.")
-               time.sleep(5)
-               exit()
+               return
             with open(f'{manifest}.json') as f:
                   entries = json.load(f)
             if len(entries) == 0:
                app.write_box("The program cannot run, as there are no entries in manifest_cloud.json. \nThe program will now exit in 5 seconds.")
-               time.sleep(5)
-               exit() 
+               return 
         except FileNotFoundError:
                app.write_box("The manifest could not be found by the program. The program will create a new one, and exit in 5 seconds.")
-               inner_validate(manifest)
-               time.sleep(5)
-               exit()
+               inner_validate(app, manifest)
+               return
         except json.JSONDecodeError:
                logging.critical(f"The manifest file {manifest}.json is corrupted, and as such, the program will not move files for security reasons!")
                app.write_box(f"The {manifest} file {manifest}.json is corrupted, and as such, the program will not move files for security reasons!\nThe program will now exit in 5 seconds.")
-               time.sleep(5)
-               exit()
+               return
         app.write_box(f"Please wait while the program checks the feasibility of moving files from the manifest {manifest}.json to the directory {file_dir}")
-        for key, val in tqdm(entries.items()):
+        progress = app.progress_bar
+        for index, (key, val) in enumerate(entries.items(), start=1):
             if break_outer:
                break
             date = val.get("last_seen", "never")
@@ -104,49 +224,49 @@ def mover(app, directory, manifest):
                   while inner:
                      app.write_box(f"Error! There is not enough space to move any more files to the directory {file_dir}. ")
                      app.write_box(f"Total size of files in {manifest}.json (up to this point): {total_size}.\nFree space available on disk: {dir_size}.")
-                     time.sleep(5)
-                     mv_file = questionary.select(
-                               f"Please select an option: \nA.) Move all files before {key} \nB.) Specify a new directory to move files to\nC.)Exit the program",
-                               choices=["A", "B", "C"]
-                                ).ask()
-                     if mv_file == "A":
+                     mv_file = disk_space_choice(app, key)
+                     if mv_file == f"Copy all files before {key}":
                         arr.remove(key)
                         break_outer = True
                         inner = False
-                     elif mv_file == "B":
-                        switch_dir = True
-                        while switch_dir:
-                           directory_change = questionary.path("Please enter a path to a directory (autocomplete enabled)",
-                           only_directories=True).ask()
-                           if directory_change.is_dir():
-                              break
-                           else:
-                              app.write_box("Invalid path, please try again.")
-                              continue
-                        mover_helper(directory_change, manifest)
-                     elif mv_file == "C":
-                        exit()
-                     else:
-                        continue
-        move_op = questionary.select(
-            'What would you like with the files?',
-             choices=[
-                  f"Copy All Files to {file_dir}",
-                  f"Manually Select Files to Copy to {file_dir}",
-                  "Nothing, exit the program.",
-             ]).ask()
-        if move_op == f"Copy All Files to {file_dir}":
-           pass
-        elif move_op == f"Manually Select Files to Copy to {file_dir}":
-           arr = questionary.checkbox('Please select the files you would like to move', choices=arr).ask()
+                     elif mv_file == "Specify a new directory":
+                        directory_change = filedialog.askdirectory(
+                        title="Select a directory"
+                        )
+                        if not directory_change:
+                           app.write_box("Directory selection cancelled.")
+                           return
+                        mover_helper(app, directory_change, manifest)
+                        return
+                     elif mv_file == "Exit":
+                        return
+            progress.set(index / len(entries))
+            app.update_idletasks()
+        progress.set(0)
+        move_op = move_choice(app, "Files")
+        if move_op == "Copy All Files":
+            pass
+        elif move_op == "Manually Select Files":
+            arr = select_files(
+               app,
+               arr,
+               "Select Files", "files"
+            )
         else:
-           app.write_box("The program will exit in 5 seconds.")
-           time.sleep(5)
-           exit()
+            app.write_box("File copying cancelled.")
+            return
         app.write_box(f"Please wait while the program moves the files over to the directory {file_dir}")
         if len(arr) == 0:
            return
-        for value in tqdm(arr):
+        progress = app.progress_bar
+        for index, value in enumerate(arr, start=1):
+            #Added because some files are way too long to show.
+            file_name = Path(value).name
+            if len(file_name) > 40:
+                file_name = file_name[:37] + "..."
+            app.progress_label.configure(
+                text=f"Copying file: {file_name} to {file_dir}..."
+            )
             file_path = Path(value)
             if file_path.is_file():
                try:
@@ -167,7 +287,10 @@ def mover(app, directory, manifest):
             else:
                app.write_box(f"This file {value} does not exist on the disk. Aborting move")
                logging.warning(f"This file {value} does not exist on the disk. Aborting move")
-               failed_arr.append(value)        
+               failed_arr.append(value)    
+            progress.set(index / len(arr))
+            app.update_idletasks()
+        progress.set(0)    
      except Exception as e:
         app.write_box(f"Exception: {e}")
      logging.info(f"Successfully moved {move_count} entries to directory {file_dir}.")
@@ -192,26 +315,23 @@ def mover_2(app):
     try:
         if os.path.getsize('manifest_cloud.json') == 0:
            app.write_box("The program cannot run, as there are no entries in manifest_cloud.json. \nThe program will now exit in 5 seconds.")
-           time.sleep(5)
-           exit()
+           return
         with open('manifest_cloud.json') as f:
              entries = json.load(f)
         if len(entries) == 0:
            app.write_box("The program cannot run, as there are no entries in manifest_cloud.json. \nThe program will now exit in 5 seconds.")
-           time.sleep(5)
-           exit() 
+           return 
     except FileNotFoundError:
            app.write_box("The manifest could not be found by the program. The program will create a new one, and exit in 5 seconds.")
-           inner_validate("manifest_cloud")
-           time.sleep(5)
-           exit()
+           inner_validate(app, "manifest_cloud")
+           return
     except json.JSONDecodeError:
            logging.critical("The manifest file manifest_cloud.json is corrupted, and as such, the program will not move blobs for security reasons!")
            app.write_box("The manifest file manifest_cloud.json is corrupted, and as such, the program will not move blobs for security reasons!\nThe program will now exit in 5 seconds.")
-           time.sleep(5)
-           exit()
+           return
     app.write_box(f"Please wait while the program checks the feasibility of moving blobs from {azure_container_source} to the container {azure_container_target}")
-    for key, val in tqdm(entries.items()):
+    progress = app.progress_bar
+    for index, (key, val) in enumerate(entries.items(), start=1):
             date = val.get("last_seen", "never")
             file_size = val.get("size", "-1")
             if not date or date == "never" or not file_size or file_size == "-1":
@@ -224,24 +344,32 @@ def mover_2(app):
             if delta_2 <= 7:
                arr.append(key)
                total_size += int(file_size)
-    move_op = questionary.select(
-         'What would you like with the blobs?',
-          choices=[
-            f"Copy All Blobs to {azure_container_target}",
-            f"Manually Select Blob to Copy to {azure_container_target}",
-            "Nothing, exit the program.",
-          ]).ask()
-    if move_op == f"Copy All Blobs to {azure_container_target}":
-       pass
-    elif move_op == f"Manually Select Blob to Copy to {azure_container_target}":
-       arr = questionary.checkbox('Please select the blobs you would like to move', choices=arr).ask()
+            progress.set(index / len(entries))
+            app.update_idletasks()
+    progress.set(0)
+    move_op = move_choice(app, "Blobs")
+    if move_op == "Copy All Blobs":
+      pass
+    elif move_op == "Manually Select Blobs":
+      arr = select_files(
+         app,
+         arr,
+         "Select Blobs", "blobs"
+      )
     else:
-       app.write_box("The program will exit in 5 seconds.")
-       time.sleep(5)
-       exit()
+      app.write_box("Blob copying cancelled.")
+      return
     if len(arr) == 0:
        return
-    for blob_name in tqdm(arr):
+    progress = app.progress_bar
+    for index, blob_name in enumerate(arr, start=1):
+         #Once again, done because the blobs would be too long to show.
+         blob_display = blob_name
+         if len(blob_display) > 40:
+            blob_display = blob_display[:37] + "..."
+         app.progress_label.configure(
+             text=f"Copying blob: {blob_display} to {azure_container_target}..."
+         )
          try:
                blob_service_client = BlobServiceClient.from_connection_string(azure_connection_string)
                source = blob_service_client.get_blob_client(container=azure_container_source, blob=blob_name)
@@ -261,5 +389,11 @@ def mover_2(app):
                app.write_box(f"Unexpected Azure Error: {e}")
                logging.error(f"Unexpected Azure Error: {e}")
                failed_arr.append(blob_name)
+         progress.set(index / len(arr))
+         app.update_idletasks()
+    progress.set(0)
     logging.info(f"Successfully moved {move_count} blobs from container {azure_container_source} to container {azure_container_target}.")
     return
+#https://pypi.org/project/discord-webhook/
+#https://pypi.org/project/plyer/
+#https://pypi.org/project/chime/

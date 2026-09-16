@@ -1,4 +1,4 @@
 {
-    "virus_check": "manual",
-    "quarantine": "manual"
+    "virus_check": "true",
+    "quarantine": "true"
 }
