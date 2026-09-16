@@ -79,8 +79,8 @@ def mover(directory, manifest):
                time.sleep(5)
                exit()
         except json.JSONDecodeError:
-               logging.critical(f"The manifest file {manifest}.json is corrupted, and as such, the program will not move files for security reasons!")
-               print(f"The {manifest} file {manifest}.json is corrupted, and as such, the program will not move files for security reasons!\nThe program will now exit in 5 seconds.")
+               logging.critical(f"The manifest file {manifest}.json is corrupted, and as such, the program will not copy files for security reasons!")
+               print(f"The {manifest} file {manifest}.json is corrupted, and as such, the program will not copy files for security reasons!\nThe program will now exit in 5 seconds.")
                time.sleep(5)
                exit()
         print(f"Please wait while the program checks the feasibility of moving files from the manifest {manifest}.json to the directory {file_dir}")
@@ -102,11 +102,11 @@ def mover(directory, manifest):
                if total_size > dir_size:
                   inner = True
                   while inner:
-                     print(f"Error! There is not enough space to move any more files to the directory {file_dir}. ")
+                     print(f"Error! There is not enough space to copy any more files to the directory {file_dir}. ")
                      print(f"Total size of files in {manifest}.json (up to this point): {total_size}.\nFree space available on disk: {dir_size}.")
                      time.sleep(5)
                      mv_file = questionary.select(
-                               f"Please select an option: \nA.) Move all files before {key} \nB.) Specify a new directory to move files to\nC.)Exit the program",
+                               f"Please select an option: \nA.) Copy all files before {key} \nB.) Specify a new directory to copy files to\nC.)Exit the program",
                                choices=["A", "B", "C"]
                                 ).ask()
                      if mv_file == "A":
@@ -138,12 +138,12 @@ def mover(directory, manifest):
         if move_op == f"Copy All Files to {file_dir}":
            pass
         elif move_op == f"Manually Select Files to Copy to {file_dir}":
-           arr = questionary.checkbox('Please select the files you would like to move', choices=arr).ask()
+           arr = questionary.checkbox('Please select the files you would like to copy', choices=arr).ask()
         else:
            print("The program will exit in 5 seconds.")
            time.sleep(5)
            exit()
-        print(f"Please wait while the program moves the files over to the directory {file_dir}")
+        print(f"Please wait while the program copies the files over to the directory {file_dir}")
         if len(arr) == 0:
            return
         for value in tqdm(arr):
@@ -165,12 +165,12 @@ def mover(directory, manifest):
                   logging.critical(f"ERROR with moving {file_path} to directory {file_dir}: {e}")   
                   failed_arr.append(value) 
             else:
-               print(f"This file {value} does not exist on the disk. Aborting move")
-               logging.warning(f"This file {value} does not exist on the disk. Aborting move")
+               print(f"This file {value} does not exist on the disk. Aborting copy")
+               logging.warning(f"This file {value} does not exist on the disk. Aborting copy")
                failed_arr.append(value)        
      except Exception as e:
         print(f"Exception: {e}")
-     logging.info(f"Successfully moved {move_count} entries to directory {file_dir}.")
+     logging.info(f"Successfully copied {move_count} entries to directory {file_dir}.")
      return  
 def mover_2():
     total_size = 0
@@ -206,8 +206,8 @@ def mover_2():
            time.sleep(5)
            exit()
     except json.JSONDecodeError:
-           logging.critical("The manifest file manifest_cloud.json is corrupted, and as such, the program will not move blobs for security reasons!")
-           print("The manifest file manifest_cloud.json is corrupted, and as such, the program will not move blobs for security reasons!\nThe program will now exit in 5 seconds.")
+           logging.critical("The manifest file manifest_cloud.json is corrupted, and as such, the program will not copy blobs for security reasons!")
+           print("The manifest file manifest_cloud.json is corrupted, and as such, the program will not copy blobs for security reasons!\nThe program will now exit in 5 seconds.")
            time.sleep(5)
            exit()
     print(f"Please wait while the program checks the feasibility of moving blobs from {azure_container_source} to the container {azure_container_target}")
@@ -234,7 +234,7 @@ def mover_2():
     if move_op == f"Copy All Blobs to {azure_container_target}":
        pass
     elif move_op == f"Manually Select Blob to Copy to {azure_container_target}":
-       arr = questionary.checkbox('Please select the blobs you would like to move', choices=arr).ask()
+       arr = questionary.checkbox('Please select the blobs you would like to Copy', choices=arr).ask()
     else:
        print("The program will exit in 5 seconds.")
        time.sleep(5)
@@ -261,5 +261,5 @@ def mover_2():
                print(f"Unexpected Azure Error: {e}")
                logging.error(f"Unexpected Azure Error: {e}")
                failed_arr.append(blob_name)
-    logging.info(f"Successfully moved {move_count} blobs from container {azure_container_source} to container {azure_container_target}.")
+    logging.info(f"Successfully copied {move_count} blobs from container {azure_container_source} to container {azure_container_target}.")
     return
