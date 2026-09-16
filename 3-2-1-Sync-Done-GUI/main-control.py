@@ -18,7 +18,7 @@ from datetime import datetime
 from hashHOT import hash256_caller
 from json_control import json_writer, hash_compare, load_manifest
 from VT_online_check import online_check
-from notify import notify_window,main_menu, local_notification_check, webhook_check, vt_check, alert_preferences, alert_sound, schedule_preferences
+from notify import notify_window,local_notification_check, webhook_check, vt_check, alert_preferences, alert_sound, schedule_preferences
 from mover_manage import mover, mover_2
 from plyer import notification
 from pytz import timezone
