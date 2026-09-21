@@ -40,7 +40,7 @@ def mover_helper(app, directory_2, manifest_2):
     app.write_box(f"Program restarting for directory {directory_2}.")
     mover(app, directory_2, manifest_2)
 def disk_space_choice(app, file):
-    choice = {"value": None}
+    choice = {"value": "exit"}
     window = ctk.CTkToplevel(app)
     window.title("Insufficient Disk Space")
     window.geometry("500x300")
@@ -48,7 +48,8 @@ def disk_space_choice(app, file):
     window.grab_set()
     file_name = Path(file).name
     if len(file_name) > 40:
-       file_name = file_name[:37] + "..."
+        file_name = file_name[:37] + "..."
+    copy_option = f"Copy all files before {file_name}"
     label = ctk.CTkLabel(
         window,
         text=f"Not enough space to copy {file_name}.\nPlease select an option:"
@@ -57,23 +58,36 @@ def disk_space_choice(app, file):
     dropdown = ctk.CTkOptionMenu(
         window,
         values=[
-            f"Copy all files before {file_name}",
+            copy_option,
             "Specify a new directory",
             "Exit"
-        ]
+        ],
+        width=300
     )
     dropdown.grid(row=1, column=0, padx=10, pady=10)
-    dropdown.set(f"Copy all files before {file_name}")
-    def confirm():
-        choice["value"] = dropdown.get()
+    window.grid_columnconfigure(0, weight=1)
+    dropdown.set(copy_option)
+    def close_window(value="exit"):
+        choice["value"] = value
         window.destroy()
+    def confirm():
+        selected = dropdown.get()
+        if selected == copy_option:
+            close_window("copy_before")
+        elif selected == "Specify a new directory":
+            close_window("Specify a new directory")
+        else:
+            close_window("Exit")
     button = ctk.CTkButton(
         window,
         text="Confirm",
         command=confirm
     )
     button.grid(row=2, column=0, padx=10, pady=20)
-    window.protocol("WM_DELETE_WINDOW", window.destroy)
+    def quit_app():
+        window.destroy()
+        app.destroy()
+    window.protocol("WM_DELETE_WINDOW", quit_app)
     app.wait_window(window)
     return choice["value"]
 def select_files(app, arr, title, item_type):
@@ -82,7 +96,6 @@ def select_files(app, arr, title, item_type):
     window.title(title)
     window.geometry("500x500")
     window.resizable(False, False)
-    window.grab_set()
     label = ctk.CTkLabel(
         window,
         text=f"Please select the {item_type} you would like to copy:"
@@ -150,7 +163,8 @@ def move_choice(app, item_type):
             f"Copy All {item_type}",
             f"Manually Select {item_type}",
             "Nothing, exit"
-        ]
+        ],
+        width=300
     )
     dropdown.grid(row=1, column=0, padx=10, pady=10)
     dropdown.set(f"Copy All {item_type}")
@@ -222,11 +236,14 @@ def mover(app, directory, manifest):
                if total_size > dir_size:
                   inner = True
                   while inner:
-                     app.write_box(f"Error! There is not enough space to move any more files to the directory {file_dir}. ")
+                     app.write_box(f"Error! There is not enough space to move any more files, including {key} to the directory {file_dir}. ")
                      app.write_box(f"Total size of files in {manifest}.json (up to this point): {total_size}.\nFree space available on disk: {dir_size}.")
                      mv_file = disk_space_choice(app, key)
-                     if mv_file == f"Copy all files before {key}":
+                     if mv_file == "copy_before":
                         arr.remove(key)
+                        total_size -= int(file_size) 
+                        if len(arr) == 0:
+                           return
                         break_outer = True
                         inner = False
                      elif mv_file == "Specify a new directory":
@@ -255,7 +272,7 @@ def mover(app, directory, manifest):
         else:
             app.write_box("File copying cancelled.")
             return
-        app.write_box(f"Please wait while the program moves the files over to the directory {file_dir}")
+        app.write_box(f"Please wait while the program copies the files over to the directory {file_dir}")
         if len(arr) == 0:
            return
         progress = app.progress_bar

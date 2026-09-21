@@ -15,6 +15,7 @@ from pathlib import Path
 from dotenv import set_key
 from timezones import timezones_from_file
 from discord_webhook import DiscordWebhook,  DiscordEmbed
+from PIL import Image
 def alert_sound():
     chime.theme('chime') 
     chime.info()
@@ -174,6 +175,13 @@ def schedule_preferences(app, program):
                 app.write_box("\nPreferences file validated, printing current settings.")
                 for key in keys:
                     app.write_box(f"{key}: {info[key]}")
+                load_dotenv(override=True)
+                local_time = os.getenv("TIME_IN_24_HOURS_LOCAL")
+                cloud_time = os.getenv("TIME_IN_24_HOURS_CLOUD")
+                timezone = os.getenv("TIMEZONE_DST_AWARE")
+                app.write_box(f"Local Time: {local_time}")
+                app.write_box(f"Cloud Time: {cloud_time}")
+                app.write_box(f"Timezone: {timezone}")
                 if program == "main-control":
                    return True
                 app.write_box("\nSchedule preferences loaded into the GUI.")
@@ -405,7 +413,7 @@ def vt_check(app, program):
            malicious_count = stats.get("malicious", 0)
            status = "Yes, Malicious" if malicious_count > 5 else "No, Clean"
            app.write_box(f"Name: {name}")
-           app.write_box(f"Name: {hash_in}")
+           app.write_box(f"Hash: {hash_in}")
            app.write_box(f"Is this malicious: {status} by ({malicious_count} detections)")
        except requests.exceptions.RequestException as e:
            app.write_box(f"API Error: {e}")
@@ -416,6 +424,8 @@ def vt_check(app, program):
 class notify_window(ctk.CTkToplevel):
       def __init__(self, parent):
             super().__init__(parent)
+            global running 
+            running = False
             self.withdraw()
             #Workaround I had to do since the GUi would look off while the timezone file
             #was being loaded, allows the window to be drawn before being shown.
@@ -462,15 +472,51 @@ class notify_window(ctk.CTkToplevel):
             "\nG.)Set Time and Timezone for Schedule"
             "\nH.)Return to the Main Menu")
             self.menu_text.configure(state="disabled")
-            self.message_box = ctk.CTkTextbox(self, width=280,corner_radius=0, wrap="word")
+            self.right_frame = ctk.CTkFrame(self, fg_color="transparent",  border_width=2, corner_radius=0, border_color="gray")
+            self.right_frame.grid(
+                        row=0,
+                        column=2,
+                        columnspan=2,
+                        rowspan=7,
+                        sticky="nsew"
+            )
+            self.right_frame.grid_rowconfigure(2, weight=1)
+            self.right_frame.grid_columnconfigure(0, weight=1)
+            self.right_frame.grid_columnconfigure(1, weight=1)
+            self.message_label = ctk.CTkLabel(master=self.right_frame, text="Event Viewer", text_color="#4AF262", font=("Helvetica", 20, "bold"))
+            self.message_label.grid(
+            row=0,
+            column=0,
+            columnspan=2,
+            padx=10,
+            pady=(20, 10),
+            sticky="ew"
+            )
+            self.message_box = ctk.CTkTextbox(master=self.right_frame,corner_radius=0, wrap="word")
             self.message_box.grid(
-                row=0,
-                column=2,
-                rowspan=7,
-                padx=(0, 0),
-                pady=0,
-                sticky="nsew"
-                )
+            row=2,
+            column=0,
+            columnspan=2,
+            padx=(2,3),
+            pady=(0,3),
+            sticky="nsew"
+            )
+            self.event_separator = ctk.CTkFrame(
+            master=self.right_frame,
+            height=3,
+            corner_radius=0,
+            fg_color="gray"
+            )
+            self.event_separator.grid(
+            row=1,
+            column=0,
+            columnspan=2,
+            padx=(1,1),
+            pady=0,
+            sticky="ew"
+            )
+            self.grid_columnconfigure(2, weight=1)
+            self.grid_columnconfigure(3, weight=1)
             self.local_time = ctk.CTkEntry(
             self.left_frame,
             placeholder_text="MODE G: Local Time, 24 HOUR FORMAT (HH:MM)"
@@ -498,8 +544,9 @@ class notify_window(ctk.CTkToplevel):
             self.local_time.configure(state="disabled")
             self.cloud_time.configure(state="disabled")
             self.timezone_dropdown = ctk.CTkOptionMenu(
-                self.left_frame,
-                values=timezones_from_file()
+                self.left_frame, 
+                values=timezones_from_file(),
+                width=300,
             )
             self.timezone_dropdown.grid(
                 row=4,
@@ -521,13 +568,24 @@ class notify_window(ctk.CTkToplevel):
                         "F.)Set Auto-Schedule Preferences",
                         "G.)Set Time and Timezone for Schedule",
                         "H.)Return to the Main Menu"],
+                width=300,
                 command=self.mode_return
             )
             self.dropdown.grid(row=5, column=0, padx=(5,5), pady=(5,5), sticky="w")
             self.dropdown.set("A.)Desktop Notifications Check") #Added to prevent edge case that was crashing the program.
-            self.button = ctk.CTkButton(self.left_frame, text="Verify/Modify/Exit", command=self.submit)
-            self.button.grid(row=5,column=1, padx=0, pady=20, sticky="e")
-            self.time_button = ctk.CTkButton(self.left_frame, text="Set Time")
+            self.button_img = ctk.CTkImage(
+                        light_image=Image.open("icons_and_attributions/management.png"), 
+                        dark_image=Image.open("icons_and_attributions/management.png"),  
+                        size=(24, 24)                             
+            )
+            self.button = ctk.CTkButton(self.left_frame, text="Verify/Modify/Exit", image=self.button_img, compound="left", fg_color="green", hover_color="darkgreen", command=self.submit)
+            self.button.grid(row=5,column=1, padx=(0,10), pady=20, sticky="e")
+            self.time_button_img = ctk.CTkImage(
+                        light_image=Image.open("icons_and_attributions/schedule.png"), 
+                        dark_image=Image.open("icons_and_attributions/schedule.png"),  
+                        size=(24, 24)                             
+            )
+            self.time_button = ctk.CTkButton(self.left_frame, text="Set Time", image=self.time_button_img, compound="left", fg_color="green", hover_color="darkgreen", text_color="white", command=self.submit)
             self.time_button.grid(
                 row=4,
                 column=1,
@@ -537,23 +595,34 @@ class notify_window(ctk.CTkToplevel):
             self.time_button.configure(state="disabled")
             self.webhook_dropdown = ctk.CTkOptionMenu(
             self.left_frame,
-            values=["Enable Webhook Notifications?", "true", "false"]
+            values=["Enable Webhook Notifications?", "true", "false"],
+            width=300,
+            fg_color="blue", 
+            text_color="white"
             )
             self.local_dropdown = ctk.CTkOptionMenu(
                 self.left_frame,
-                values=["Enable Desktop Notifications?", "true", "false"]
+                values=["Enable Desktop Notifications?", "true", "false"],
+                width=300,
+                fg_color="white", 
+                text_color="black"
             )
             self.vt_dropdown = ctk.CTkOptionMenu(
                 self.left_frame,
-                values=["Enable VirusTotal Checks?", "true", "false"]
+                values=["Enable VirusTotal Checks?", "true", "false"],
+                width=300,
+                fg_color="gold", 
+                text_color="black"
             )
             self.quarantine_dropdown = ctk.CTkOptionMenu(
                 self.left_frame,
-                values=["Auto-Quarantine Files/Blobs?", "true", "false", "manual"]
+                values=["Auto-Quarantine Files/Blobs?", "true", "false", "manual"],
+                width=300
             )
             self.virus_check_dropdown = ctk.CTkOptionMenu(
                 self.left_frame,
-                values=["Auto-Check Files/Blobs with VirusTotal?", "true", "false", "manual"]
+                values=["Auto-Check Files/Blobs with VirusTotal?", "true", "false", "manual"],
+                width=300
             )
             self.webhook_dropdown.grid_remove()
             self.local_dropdown.grid_remove()
@@ -572,6 +641,7 @@ class notify_window(ctk.CTkToplevel):
             self.deiconify()
       def mode_return(self, value):
          global sel
+         global running 
          self.local_time.grid_remove()
          self.cloud_time.grid_remove()
          self.timezone_dropdown.grid_remove()
@@ -583,90 +653,99 @@ class notify_window(ctk.CTkToplevel):
          self.virus_check_dropdown.grid_remove()
          self.local_time.configure(state="disabled")
          self.cloud_time.configure(state="disabled")
-         if value == "A.)Desktop Notifications Check":
-            sel = "A"
-         elif value == "B.)Discord Webhook Integration Check":
-            sel = "B"
-         elif value == "C.)VirusTotal API Check":
-            sel = "C"
-         elif value == "D.)Set Alert Preferences":
-            sel = "D"
-            self.webhook_dropdown.grid(
-                row=2,
-                column=0,
-                padx=(5, 5),
-                pady=(5, 0),
-                sticky="ew"
-            )
-            self.local_dropdown.grid(
-                row=3,
-                column=0,
-                padx=(5, 5),
-                pady=(5, 0),
-                sticky="ew"
-            )
-            self.vt_dropdown.grid(
-                row=4,
-                column=0,
-                padx=(5, 5),
-                pady=(5, 5),
-                sticky="ew"
-            )
-            alert_preferences(self, "notify")
-         elif value == "E.)Azure Blob Storage Check":
-            sel = "E"
-         elif value == "F.)Set Auto-Schedule Preferences":
-            sel = "F"
-            self.quarantine_dropdown.grid(
-                row=2,
-                column=0,
-                padx=(5, 5),
-                pady=(5, 0),
-                sticky="ew"
-            )
-            self.virus_check_dropdown.grid(
-                row=3,
-                column=0,
-                padx=(5, 5),
-                pady=(5, 0),
-                sticky="ew"
-            )
-            schedule_preferences(self, "notify")
-         elif value == "G.)Set Time and Timezone for Schedule":
-            sel = "G"
-            self.local_time.grid(
-                row=2,
-                column=0,
-                columnspan=2,
-                padx=(5, 5),
-                pady=(5, 0),
-                sticky="ew"
-            )
-            self.cloud_time.grid(
-                row=3,
-                column=0,
-                columnspan=2,
-                padx=(5, 5),
-                pady=(5, 0),
-                sticky="ew"
-            )
-            self.timezone_dropdown.grid(
-                row=4,
-                column=0,
-                padx=(5, 5),
-                pady=(5, 5),
-                sticky="ew"
-            )
-            self.time_button.grid(
-                row=4,
-                column=1,
-                padx=0,
-                pady=0
-            )
-            self.local_time.configure(state="normal")
-            self.cloud_time.configure(state="normal")
-         elif value == "H.)Return to the Main Menu":
-            sel = "H"
+         self.time_button.configure(state="disabled")
+         if not running:
+            if value != "G.)Set Time and Timezone for Schedule":
+               self.button.configure(state="enabled")
+            if value == "A.)Desktop Notifications Check":
+                sel = "A"
+            elif value == "B.)Discord Webhook Integration Check":
+                sel = "B"
+            elif value == "C.)VirusTotal API Check":
+                sel = "C"
+            elif value == "D.)Set Alert Preferences":
+                sel = "D"
+                self.webhook_dropdown.grid(
+                    row=2,
+                    column=0,
+                    padx=(5, 5),
+                    pady=(5, 0),
+                    sticky="ew"
+                )
+                self.local_dropdown.grid(
+                    row=3,
+                    column=0,
+                    padx=(5, 5),
+                    pady=(5, 0),
+                    sticky="ew"
+                )
+                self.vt_dropdown.grid(
+                    row=4,
+                    column=0,
+                    padx=(5, 5),
+                    pady=(5, 5),
+                    sticky="ew"
+                )
+                alert_preferences(self, "notify")
+            elif value == "E.)Azure Blob Storage Check":
+                sel = "E"
+            elif value == "F.)Set Auto-Schedule Preferences":
+                sel = "F"
+                self.quarantine_dropdown.grid(
+                    row=2,
+                    column=0,
+                    padx=(5, 5),
+                    pady=(5, 0),
+                    sticky="ew"
+                )
+                self.virus_check_dropdown.grid(
+                    row=3,
+                    column=0,
+                    padx=(5, 5),
+                    pady=(5, 0),
+                    sticky="ew"
+                )
+                schedule_preferences(self, "notify")
+            elif value == "G.)Set Time and Timezone for Schedule":
+                self.button.configure(state="disabled")
+                sel = "G"
+                self.local_time.grid(
+                    row=2,
+                    column=0,
+                    columnspan=2,
+                    padx=(5, 5),
+                    pady=(5, 0),
+                    sticky="ew"
+                )
+                self.cloud_time.grid(
+                    row=3,
+                    column=0,
+                    columnspan=2,
+                    padx=(5, 5),
+                    pady=(5, 0),
+                    sticky="ew"
+                )
+                self.timezone_dropdown.grid(
+                    row=4,
+                    column=0,
+                    padx=(5, 5),
+                    pady=(5, 5),
+                    sticky="ew"
+                )
+                self.time_button.grid(
+                    row=4,
+                    column=1,
+                    padx=0,
+                    pady=0
+                )
+                self.local_time.configure(state="normal")
+                self.cloud_time.configure(state="normal")
+                self.time_button.configure(state="normal")
+                schedule_preferences(self, "notify")
+            elif value == "H.)Return to the Main Menu":
+                sel = "H"
+         else:
+            self.write_box("Cannot change modes while the mode is running for security reasons!")
       def write_box(self, message):
         self.after(
                 0,
@@ -679,8 +758,10 @@ class notify_window(ctk.CTkToplevel):
         )
       def submit(self):
         global program
+        global running
         program = "notify"
         self.button.configure(state="disabled")
+        running = True
         if sel == "A":
            local_notification_check(self, program)
         elif sel  == "B":
@@ -688,7 +769,11 @@ class notify_window(ctk.CTkToplevel):
         elif sel  == "C":
            vt_check(self, program)
         elif sel == "D":
-           save_alert_preferences(self)
+           allowed = {"true", "false"}
+           if (self.local_dropdown.get() not in allowed or self.vt_dropdown.get() not in allowed or self.webhook_dropdown.get() not in allowed):
+              self.write_box("Invalid setting, please try again.")
+           else:
+              save_alert_preferences(self)
         elif sel == "E":
            azure_verify(self)
         elif sel == "F":
@@ -700,7 +785,9 @@ class notify_window(ctk.CTkToplevel):
             self.parent.deiconify()
         else:
            self.write_box("Invalid input. Please try again.")
-        self.button.configure(state="normal")
+        if not sel == "G":
+           self.button.configure(state="normal")
+        running = False
       def close_mode_c(self):
           self.destroy()
           self.parent.deiconify()

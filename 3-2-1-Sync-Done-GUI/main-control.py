@@ -9,7 +9,6 @@ import json
 import time
 import schedule
 import functools
-import questionary
 import re
 import threading #Blobs were causing GUI to freeze, so I had to introduce threading.
 from azure.storage.blob import BlobServiceClient
@@ -22,8 +21,10 @@ from notify import notify_window,local_notification_check, webhook_check, vt_che
 from mover_manage import mover, mover_2
 from plyer import notification
 from pytz import timezone
+from pathlib import Path
 import customtkinter as ctk
 from tkinter import filedialog
+from PIL import Image
 load_dotenv()
 BATCH_SIZE = 4096 #Constant, because the amount of IO operations was slowing down the project by a lot.
 buffer_arr = {}
@@ -129,6 +130,64 @@ def source_updater_helper(app, status3, pbar, manifest_file_2, file_name_2, this
         app.write_box(pbar_msg_2)
         time.sleep(5)
         exit()
+def corruption_choice(app):
+    choice = {"value": None}
+    window = ctk.CTkToplevel(app)
+    window.title("Corrupted File")
+    window.geometry("500x250")
+    window.resizable(False, False)
+    window.grab_set()
+    label = ctk.CTkLabel(
+        window,
+        text="What would you like to do with this corrupted file/blob?"
+    )
+    label.grid(
+        row=0,
+        column=0,
+        padx=10,
+        pady=10
+    )
+    dropdown = ctk.CTkOptionMenu(
+        window,
+        values=[
+            "Update manifest (No VT Check)",
+            "Update manifest (VT Check)",
+            "Abort program"
+        ],
+        width=400
+    )
+    dropdown.grid(
+        row=1,
+        column=0,
+        padx=10,
+        pady=10
+    )
+    dropdown.set("Update manifest (No VT Check)")
+    def confirm():
+        selected = dropdown.get()
+        if selected == "Update manifest (No VT Check)":
+            choice["value"] = "CONVT"
+        elif selected == "Update manifest (VT Check)":
+            choice["value"] = "CON"
+        else:
+            choice["value"] = "EXIT"
+        window.destroy()
+    button = ctk.CTkButton(
+        window,
+        text="Confirm",
+        command=confirm
+    )
+    button.grid(
+        row=2,
+        column=0,
+        padx=10,
+        pady=20
+    )
+    window.protocol("WM_DELETE_WINDOW", window.destroy)
+    app.wait_window(window)
+    if choice["value"] is None:
+        choice["value"] = "EXIT"
+    return choice["value"]
 # noinspection DuplicatedCode
 def source_updater(app, root, files, pbar, pref, manifest_name, manifest_data, this_one): #I added this because I didn't like how
     #before the log accumulated all errors, so now logging is specific to the given manifest file.
@@ -137,13 +196,16 @@ def source_updater(app, root, files, pbar, pref, manifest_name, manifest_data, t
     else:
        manifest_file = "manifest2"
     for file in files:
-        move_on = False
         if app.argv.ext and not file.endswith(app.argv.ext):
            continue
         if os.path.basename(file) in EXCLUDED:
            continue
         # noinspection bad-argument-type
         file_path = os.path.normpath(os.path.join(root, file))
+        file_name = Path(file).name
+        if len(file_name) > 45:
+            file_name = file_name[:44]
+            pbar.set_desc(f"Hashing file {file_name}, please wait...")
         try:
             f_stat = os.stat(file_path)
             cur_mtime = round(f_stat.st_mtime, 4) #Avoids inconsistencies in floating point times.
@@ -177,65 +239,47 @@ def source_updater(app, root, files, pbar, pref, manifest_name, manifest_data, t
                  pbar.clear()
                  app.write_box(f"WARNING! This file {file} has been changed or corrupted!")
                  pbar.refresh() 
-                 while True:
-                     if pref is None:
-                        pbar.refresh() 
-                        sel = questionary.select(
-                              "Select 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ",
-                               choices=["CON", "CONVT", "EXIT"]
-                        ).ask()
-                     else:
-                        if pref == "manual":
-                           pbar.refresh() 
-                           sel = questionary.select(
-                                 "Select 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ",
-                                 choices=["CON", "CONVT", "EXIT"]
-                           ).ask()
-                        elif pref == "false":
-                           sel = "CON"
-                        elif pref == "true":
-                           sel = "CONVT"
-                        else:
-                           app.write_box("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
-                           logging.warning("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
-                           sel = "EXIT" 
-                     if sel == "CON":
-                        manifest_updater(file_path, hash_calc, write_now_updater=False, which_one=this_one)
-                        pbar.update(cur_size)
-                        pbar.refresh() 
-                        move_on = True
-                        break
-                     elif sel == "CONVT" and vt_check_2:
-                        app.write_box("\n\nPlease wait while the program checks the global virus database...")
-                        virus_check = online_check(app, hash_calc, file_path, pbar, local_notif, webhook_notif, "local", None, pref)
-                        if virus_check == "likely_safe":
-                           manifest_updater(file_path, hash_calc, write_now_updater=False, which_one=this_one)
+                 if pref is None:
+                    sel = corruption_choice(app)
+                 elif pref == "manual":
+                    sel = corruption_choice(app)
+                 elif pref == "false":
+                    sel = "CON"
+                 elif pref == "true":
+                    sel = "CONVT"
+                 else:
+                     app.write_box("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
+                     logging.warning("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
+                     sel = "EXIT"  
+                 if sel == "CON":
+                     manifest_updater(file_path, hash_calc, write_now_updater=False, which_one=this_one)
+                     pbar.update(cur_size)
+                     pbar.refresh()
+                 elif sel == "CONVT" and vt_check_2:
+                      app.write_box(
+                        "\n\nPlease wait while the program checks the global virus database..."
+                      ) 
+                      virus_check = online_check(app, hash_calc, file_path, pbar, local_notif, webhook_notif, "local", None,pref)  
+                      if virus_check == "likely_safe":
+                           manifest_updater(
+                                 file_path,
+                                 hash_calc,
+                                 write_now_updater=False,
+                                 which_one=this_one
+                           )
                            pbar.update(cur_size)
-                           move_on = True
-                        elif virus_check == "rate":
+                      elif virus_check == "rate":
                            source_updater_helper(app, virus_check, pbar, manifest_file, file_path, this_one)
-                        elif virus_check == "error":
-                           source_updater_helper(app, virus_check, pbar, manifest_file, file_path, this_one)
-                        elif "handled":
-                             pbar.clear()
-                             app.write_box(f"The suspicious file {file_path} was moved to the quarantine container. Continuing program operation...")
-                             pbar.update(cur_size)
-                             pbar.refresh()
-                             move_on = True
-                        break
-                     elif sel == "EXIT":
-                        source_updater_helper(app, "EXIT", pbar, manifest_file, file_path, this_one)
-                     else:
-                        if sel == "CONVT" and not vt_check_2:
-                           app.write_box("\n\nPlease setup VT check in .env, and run mode C for setup validation.")
-                        else:
-                           app.write_box("\n\nInvalid input. Please try again.")
-                        continue
-                 if move_on:
-                    continue
-           elif "same" in status:
-                manifest_updater(file_path, hash_calc, write_now_updater=False, which_one=this_one)
-                pbar.update(cur_size)
+                      elif virus_check == "error":
+                           source_updater_helper( app, virus_check, pbar, manifest_file, file_path, this_one)
+                      elif virus_check == "handled":
+                           pbar.clear()
+                           app.write_box(
+                                 f"The suspicious file {file_path} was moved to "
+                                 "the quarantine container. Continuing program operation..."
+                           )
+                           pbar.update(cur_size)
+                           pbar.refresh()
         else:
           app.write_box(f"FAILURE: The following file {file} could not be hashed. Please check {manifest_name}.log for information.")  
           pbar.update(cur_size)
@@ -256,6 +300,7 @@ def manifest_updater(file_path, hash_calc, write_now_updater, which_one):
            json_writer(buffer_arr,"manifest2.json")
         buffer_arr = {}
 def a_mode(app, pref):
+   app.progress_bar.configure(progress_color="green")
    try:
        global buffer_arr
        src_tgt = "source"
@@ -264,7 +309,7 @@ def a_mode(app, pref):
        app.write_box("Please wait while the program discovers the total size of the directory in bytes...")
        total = total_size(app.argv.source, app.argv.ext)
        manifest_source = load_manifest("manifest.json")
-       with CTkProgress(app,total=total,desc="Hashing files, please wait") as pbar:
+       with CTkProgress(app,total=total,desc="Hashing files, please wait...") as pbar:
              for root, dirs, files in os.walk(app.argv.source):
                 source_updater(app, root, files, pbar, pref, manifest_name="manifest", manifest_data=manifest_source, this_one=src_tgt)
        manifest_updater(None, None, write_now_updater=True, which_one=src_tgt)
@@ -273,6 +318,7 @@ def a_mode(app, pref):
                      count = len(info_a)
        logging.info(f"Successfully updated manifest.json with {count} entries.")
        if app.argv.source2: #Because it would crash, for obvious reasons.
+          app.progress_bar.configure(progress_color="blue")
           src_tgt = "target"
           logging.basicConfig(level=logging.INFO, filename="manifest2.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
           buffer_arr = {}
@@ -315,6 +361,7 @@ def total_size(directory, extension):
             count += os.path.getsize(filepath)
     return count  
 def download_blob(app, extension, manifest_data, pref):
+    app.progress_bar.configure(progress_color="magenta")
     global buffer_arr
     buffer_arr = {}
     azure_connection_string = os.getenv("AZURE_CONNECT_STR")
@@ -330,7 +377,6 @@ def download_blob(app, extension, manifest_data, pref):
          container_client = blob_service_client.get_container_client(container=azure_container_name)
          blob_list = container_client.list_blobs()
          for blob in blob_list:
-            move_on = False
             blob_name = blob.name
             modified = blob.last_modified
             cur_mtime = round(modified.timestamp(), 4) if modified else None
@@ -365,70 +411,55 @@ def download_blob(app, extension, manifest_data, pref):
                                  pbar.clear()
                                  app.write_box(f"WARNING! The blob {blob_name} has been changed or corrupted!")
                                  pbar.refresh() 
-                                 while True:
-                                       if pref is None:
-                                          pbar.refresh() 
-                                          sel = questionary.select(
-                                                "Select 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ",
-                                                 choices=["CON", "CONVT", "EXIT"]
-                                          ).ask()
-                                       else:
-                                          if pref == "manual":
-                                             pbar.refresh() 
-                                             sel = questionary.select(
-                                                   "Select 'CON' to update manifest with new hash (NO VT CHECK), 'CONVT' to update manifest with VT check, or 'EXIT' to abort program: ",
-                                                   choices=["CON", "CONVT", "EXIT"]
-                                             ).ask()
-                                          elif pref == "false":
-                                             sel = "CON"
-                                          elif pref == "true":
-                                             sel = "CONVT"
-                                          else:
-                                             app.write_box("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
-                                             logging.warning("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
-                                             sel = "EXIT" 
-                                       if sel == "CON":
-                                          blob_client = container_client.get_blob_client(blob_name)
-                                          stream_data = blob_client.download_blob()
-                                          for chunk in stream_data.chunks():
-                                              sha256.update(chunk)
-                                              pbar.update(len(chunk))
-                                          file_hash = sha256.hexdigest()
+                                 if pref is None:
+                                    sel = corruption_choice(app)
+                                 elif pref == "manual":
+                                    sel = corruption_choice(app)
+                                 elif pref == "false":
+                                      sel = "CON"
+                                 elif pref == "true":
+                                      sel = "CONVT"
+                                 elif pref == "false":
+                                      sel = "CON"
+                                 elif pref == "true":
+                                      sel = "CONVT"
+                                 else:
+                                       app.write_box("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
+                                       logging.warning("schedule_pref.json has an invalid value for virus_check, please check file. Accepted values \"manual\", \"false\", \"true\". ")
+                                       sel = "EXIT" 
+                                 if sel == "CON":
+                                    blob_client = container_client.get_blob_client(blob_name)
+                                    stream_data = blob_client.download_blob()
+                                    for chunk in stream_data.chunks():
+                                        sha256.update(chunk)
+                                        pbar.update(len(chunk))
+                                        file_hash = sha256.hexdigest()
+                                        manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now_cloud=False)
+                                 elif sel == "CONVT" and vt_check_2:
+                                      blob_client = container_client.get_blob_client(blob_name)
+                                      stream_data = blob_client.download_blob()
+                                      for chunk in stream_data.chunks():
+                                          sha256.update(chunk)
+                                          pbar.update(len(chunk))
+                                      file_hash = sha256.hexdigest()
+                                      app.write_box("\n\nPlease wait while the program checks the global virus database...")
+                                      check = online_check(app, file_hash, blob_name, pbar, local_notif, webhook_notif, "online", blob_service_client, pref)
+                                      if check == "likely_safe":
                                           manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now_cloud=False)
-                                          move_on = True
-                                          break
-                                       elif sel == "CONVT" and vt_check_2:
-                                          blob_client = container_client.get_blob_client(blob_name)
-                                          stream_data = blob_client.download_blob()
-                                          for chunk in stream_data.chunks():
-                                              sha256.update(chunk)
-                                              pbar.update(len(chunk))
-                                          file_hash = sha256.hexdigest()
-                                          app.write_box("\n\nPlease wait while the program checks the global virus database...")
-                                          check = online_check(app, file_hash, blob_name, pbar, local_notif, webhook_notif, "online", blob_service_client, pref)
-                                          if check == "likely_safe":
-                                             manifest_updater_cloud(blob_name, file_hash, cur_mtime, file_size, write_now_cloud=False)
-                                          elif check == "error":
-                                             blob_updater_helper(app, check, pbar, blob_name)
-                                          elif check == "rate":
-                                             blob_updater_helper(app, check, pbar, blob_name)
-                                          elif check == "unexpected_error":                                             
-                                             blob_updater_helper(app, check, pbar, blob_name)
-                                          elif check == "handled":
-                                             pbar.clear()
-                                             pbar.refresh()
-                                          move_on = True
-                                          break
-                                       elif sel == "EXIT":
-                                            blob_updater_helper(app, "EXIT", pbar, blob_name)
-                                       else:
-                                          if sel == "CONVT" and not vt_check_2:
-                                             app.write_box("\n\nPlease setup VT in .env, and run mode C for setup validation.")
-                                          else:
-                                             app.write_box("\n\nInvalid input. Please try again.")
-                                          continue
-                  if move_on: #Added because it should not rehash the file if the user has already gone through the process.
-                     continue   
+                                      elif check == "error":
+                                          blob_updater_helper(app, check, pbar, blob_name)
+                                      elif check == "rate":
+                                          blob_updater_helper(app, check, pbar, blob_name)
+                                      elif check == "unexpected_error":                                             
+                                          blob_updater_helper(app, check, pbar, blob_name)
+                                      elif check == "handled":
+                                          pbar.clear()
+                                          pbar.refresh()
+                                      elif sel == "EXIT":
+                                          blob_updater_helper(app, "EXIT", pbar, blob_name)
+                                 else:
+                                    app.write_box(f"FAILURE: The following file {file} could not be hashed. Please check manifest_cloud.log for information.")  
+                                    pbar.update(file_size)
                   blob_client = container_client.get_blob_client(blob_name)
                   stream_data = blob_client.download_blob()
                   with CTkProgress(app,total=stream_data.size,desc=f"Hashing blob {blob_name} from the cloud") as pbar:
@@ -605,6 +636,16 @@ class CTkProgress:
         return self
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
+    def set_desc(self, new_desc):
+        self.desc = new_desc
+        if self.total > 0:
+            percentage = min(self.current / self.total, 1.0) * 100
+        else:
+            percentage = 0
+        self.app.after(
+            0,
+            lambda: self.app.progress_label.configure(text=f"{self.desc} {percentage:.1f}%")
+        )
 class Argv:
     def __init__(self, mode=" ", source=" ", source2=" ", ext=" "):
         self.mode = mode
@@ -615,7 +656,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.geometry("900x500")
-        self.title("3-2-1-Sync-Done!")
+        self.title("3-2-1-Sync-Done! A Data Integrity Solution")
         ctk.set_appearance_mode("dark")
         #https://customtkinter.tomschimansky.com/documentation/color/ Added because it was unreadable in light mode.
         self.resizable(False, False)
@@ -633,6 +674,7 @@ class App(ctk.CTk):
         self.left_frame.grid_rowconfigure(1, weight=1)
         self.left_frame.grid_columnconfigure(0, weight=1)
         self.left_frame.grid_columnconfigure(1, weight=1)
+        self.left_frame.grid_columnconfigure(2, weight=0)
         self.header_label = ctk.CTkLabel(
             master=self.left_frame, 
             text="3-2-1 Sync Done! A Data Integrity Solution", 
@@ -644,13 +686,28 @@ class App(ctk.CTk):
                 values=["Mode A1", "Mode A2", "Mode 1B", "Mode 2B", "Mode C", "Mode D1", "Mode D2", "Mode E1", "Mode E2", "Mode E3"],
                 command=self.mode_return
                 )
+        self.extension_entry = ctk.CTkEntry(
+         master=self.left_frame,
+         placeholder_text="Extension (e.g. .txt)",
+         width=150
+        )
+        self.extension_entry.grid(
+         row=4,
+         column=1,
+         padx=10,
+         pady=20,
+         sticky="w"
+        )
+        self.extension_entry.bind("<KeyRelease>", self.extension_return)
         self.dropdown.grid(row=4, column=0, padx=20, pady=20, sticky="w")
         self.dropdown.set("Mode A1") #Added to prevent edge case that was crashing the program.
-        self.header_label.grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 20), sticky="ew")
+        self.header_label.grid(row=0, column=0, columnspan=3, padx=20, pady=(20, 20), sticky="ew")
+        self.grid_rowconfigure(0, weight=0)
         self.grid_rowconfigure(1, weight=1)  
         self.textbox = ctk.CTkTextbox(master=self.left_frame, width=400, corner_radius=0, wrap="word")
-        self.textbox.grid(row=1, column=0, columnspan=2, sticky="nsew")
-        self.textbox.insert("0.0", "3--2-1 Sync Done! A Data Integrity Solution" 
+        #Border color: https://customtkinter.tomschimansky.com/documentation/widgets/textbox/
+        self.textbox.grid(row=1, column=0, columnspan=3, sticky="nsew")
+        self.textbox.insert("0.0", "3-2-1 Sync Done! A Data Integrity Solution" 
                             "\n<-----------Overview of Modes and Functionality----------->"
                              "\n[A1]: Hash, Verify, Quarantine Files."
                              "\n[A2]: Hash, Verify, and Quarantine Files using Schedule."
@@ -664,15 +721,25 @@ class App(ctk.CTk):
                              "\n[E3]: Copy blobs from manifest_cloud.json to a target container.")
         self.textbox.configure(state="disabled")
         self.argv = Argv(mode="Mode A1", source=None, source2=None, ext=None)
-        self.button = ctk.CTkButton(self.left_frame, text="Start!", command=self.submit)
-        self.button.grid(row=4,column=1, padx=20, pady=20, sticky="e")
+        self.start_button_img = ctk.CTkImage(
+            light_image=Image.open("icons_and_attributions/sync.png"), 
+            dark_image=Image.open("icons_and_attributions/sync.png"),  
+            size=(24, 24)                             
+        )
+        self.browse_button_img = ctk.CTkImage(
+                    light_image=Image.open("icons_and_attributions/folder.png"), 
+                    dark_image=Image.open("icons_and_attributions/folder.png"),  
+                    size=(14, 14)                             
+         )
+        self.button = ctk.CTkButton(self.left_frame, text="Start!", image=self.start_button_img, compound="left", fg_color="green", hover_color="darkgreen", command=self.submit)
+        self.button.grid(row=4,column=2, padx=20, pady=20, sticky="e")
         self.button.configure(state="disabled")
-        self.progress_bar = ctk.CTkProgressBar(self.left_frame,  progress_color="green")
+        self.progress_bar = ctk.CTkProgressBar(self.left_frame, progress_color="green")
         self.progress_bar.set(0)
         self.progress_bar.grid(
          row=5,
          column=0,
-         columnspan=2,
+         columnspan=3,
          padx=20,
          pady=(0, 20),
          sticky="ew"
@@ -684,21 +751,21 @@ class App(ctk.CTk):
         self.progress_label.grid(
          row=6,
          column=0,
-         columnspan=2,
+         columnspan=3,
          padx=20,
          pady=(0, 10)
         )
         self.dir_label = ctk.CTkFrame(
            self.left_frame,
            border_width=2,
-           border_color="#D4AF37",
+           border_color="orange",
            corner_radius=0,
            fg_color="transparent"
         )
         self.dir_label.grid(
            row=2,
            column=0,
-           columnspan=2,
+           columnspan=3,
            padx=0,
            pady=(5, 0),
            sticky="nsew"
@@ -709,6 +776,11 @@ class App(ctk.CTk):
         self.browse_button = ctk.CTkButton(
             self.dir_label,
             text="Browse",
+            fg_color="blue",
+            image=self.browse_button_img,
+            compound="left",
+            text_color="white",
+            hover_color="darkblue",
             width=80,
             command=self.folder_directory_a
         )
@@ -720,6 +792,27 @@ class App(ctk.CTk):
          sticky="w"
          )
         self.selected_label = ctk.CTkEntry(self.dir_label, placeholder_text="Source: No Directory Selected")
+        self.selected_label.configure(state="disabled")
+        self.right_frame = ctk.CTkFrame(self, fg_color="transparent",  border_width=2, corner_radius=0, border_color="gray")
+        self.right_frame.grid(
+                    row=0,
+                    column=2,
+                    columnspan=2,
+                    rowspan=7,
+                    sticky="nsew"
+        )
+        self.right_frame.grid_rowconfigure(2, weight=1)
+        self.right_frame.grid_columnconfigure(0, weight=1)
+        self.right_frame.grid_columnconfigure(1, weight=1)
+        self.message_label = ctk.CTkLabel(master=self.right_frame, text="Event Viewer", text_color="#4AF262", font=("Helvetica", 20, "bold"))
+        self.message_label.grid(
+         row=0,
+         column=0,
+         columnspan=2,
+         padx=10,
+         pady=(20, 10),
+         sticky="ew"
+        )
         self.selected_label.grid(
          row=0,
          column=1,
@@ -727,30 +820,45 @@ class App(ctk.CTk):
          pady=5,
          sticky="nsew"
          )
-        self.message_box = ctk.CTkTextbox(self, width=280,corner_radius=0, wrap="word")
+        self.message_box = ctk.CTkTextbox(master=self.right_frame,corner_radius=0, wrap="word")
         self.message_box.grid(
-         row=0,
-         column=2,
-         rowspan=7,
-         padx=(0, 0),
-         pady=0,
+         row=2,
+         column=0,
+         columnspan=2,
+         padx=(2,3),
+         pady=(0,3),
          sticky="nsew"
         )
+        self.event_separator = ctk.CTkFrame(
+         master=self.right_frame,
+         height=3,
+         corner_radius=0,
+         fg_color="gray"
+        )
+        self.event_separator.grid(
+         row=1,
+         column=0,
+         columnspan=2,
+         padx=(1,1),
+         pady=0,
+         sticky="ew"
+        )
         self.grid_columnconfigure(2, weight=1)
+        self.grid_columnconfigure(3, weight=1)
         msg = "When the program runs, you will see relevant information here. \nTo temporarily check previous events, scroll up. \nTo view and analyze program events across different dates and times, please check the relevant log file."
         self.message_box.insert("end", "\n" + msg)
         self.message_box.configure(state="disabled")
         self.dir_label_2 = ctk.CTkFrame(
            self.left_frame,
            border_width=2,
-           border_color="#0032F9",
+           border_color="white",
            corner_radius=0,
            fg_color="transparent"
         )
         self.dir_label_2.grid(
            row=3,
            column=0,
-           columnspan=2,
+           columnspan=3,
            padx=0,
            pady=(5, 0),
            sticky="nsew"
@@ -761,6 +869,11 @@ class App(ctk.CTk):
         self.browse_button_2 = ctk.CTkButton(
            self.dir_label_2,
            text="Browse",
+           fg_color="magenta",
+           image=self.browse_button_img,
+           compound="left",
+           text_color="white",
+           hover_color="#8B008B",
            width=80,
            command=self.folder_directory_b
         )
@@ -772,6 +885,7 @@ class App(ctk.CTk):
          sticky="w"
         )
         self.selected_label_2 = ctk.CTkEntry(self.dir_label_2, placeholder_text="Source2: No Directory Selected")
+        self.selected_label_2.configure(state="disabled")
         self.selected_label_2.grid(
          row=0,
          column=1,
@@ -794,9 +908,12 @@ class App(ctk.CTk):
         if folder_path:
            self.button.configure(state="normal")
            self.argv.source = folder_path
+           self.selected_label.configure(state="normal")
            self.selected_label.delete(0, "end")
            self.selected_label.insert(0, folder_path)
+           self.selected_label.configure(state="disabled")
         else:
+           self.selected_label.configure(state="disabled")
            self.argv.source = None
            self.selected_label.delete(0, "end")
            self.button.configure(state="disabled")
@@ -804,13 +921,24 @@ class App(ctk.CTk):
     def folder_directory_b(self):
         folder_path = filedialog.askdirectory(initialdir="/", title="Please select a directory.")
         if folder_path:
+           self.selected_label_2.configure(state="normal")
            self.argv.source2 = folder_path
            self.selected_label_2.delete(0, "end")
            self.selected_label_2.insert(0, folder_path)
+           self.selected_label_2.configure(state="disabled")
         else:
+           self.selected_label_2.configure(state="disabled")
            self.argv.source2 = None
            self.selected_label_2.delete(0, "end")
            return False 
+    def extension_return(self, event=None):
+      extension = self.extension_entry.get().strip()
+      if extension:
+         if not extension.startswith("."):
+               extension = "." + extension
+         self.argv.ext = extension
+      else:
+         self.argv.ext = None
     def mode_return(self, value):
         self.button.configure(state="disabled")
         self.argv.mode = value
@@ -825,11 +953,14 @@ class App(ctk.CTk):
     def file_path(self):
         file_path = filedialog.askopenfilename()
         if file_path:
+           self.selected_label.configure(state="normal")
            self.button.configure(state="normal")
            self.argv.source = file_path
            self.selected_label.delete(0, "end")
            self.selected_label.insert(0, file_path)
+           self.selected_label.configure(state="disabled")
         else:
+           self.selected_label.configure(state="disabled")
            self.argv.source = None
            self.selected_label.delete(0, "end")
            self.selected_label.insert(0, "Please Select a Valid File")
@@ -842,6 +973,7 @@ class App(ctk.CTk):
            return 
         self._job_running = True
         self.button.configure(state="disabled")
+        self.extension_entry.configure(state="disabled")
         threading.Thread(target=self._run_handler, daemon=True).start()
     def _run_handler(self):
         #Even when the program ran succesfully, tkinter would crash when I attempted to clean up assets normally, because
@@ -851,6 +983,7 @@ class App(ctk.CTk):
         finally:
             self._job_running = False
             self.after(0, lambda: self.button.configure(state="normal"))
+            self.after(0, lambda: self.extension_entry.configure(state="normal"))
     def safe_destroy(self):
         #Handles safe destruction of tkinter gui.
         try:
@@ -870,11 +1003,10 @@ class App(ctk.CTk):
             test2 = True
          if not test or not test2:
             app.write_box("Error: Invalid format for directory. Valid example (Windows) C:/Users/Downloads or C:\\Users\\Downloads")
-            exit()
+            return
          validate()
          a_mode(app, None)
          app.write_box(f"Program finished at {datetime.now()}")
-         self.after(0, self.safe_destroy)
       elif app.argv.mode == "Mode A2": 
          test = preventer(app.argv.source)
          if app.argv.source2:
@@ -883,15 +1015,15 @@ class App(ctk.CTk):
             test2 = True
          if not test or not test2:
             app.write_box("Error: Invalid format for directory. Valid example (Windows) C:/Users/Downloads or C:\\Users\\Downloads")
-            exit()
+            return
          time_task = os.getenv("TIME_IN_24_HOURS_LOCAL")
          timezone_task = os.getenv("TIMEZONE_DST_AWARE")
          if not time_task:
             app.write_box("Error: Time not provided. Please create a .env file based on .env example")
-            exit()
+            return
          if not timezone_task:
             app.write_box("Error: Timezone not provided. Please create a .env file based on .env example and pytz_timezones.txt")
-            exit()
+            return
          validate()
          try:
             with open("schedule_pref.json", "r") as f:
@@ -899,7 +1031,7 @@ class App(ctk.CTk):
             check_for_virus = info.get("virus_check") 
          except Exception as e:
             app.write_box(f"Exception: {e}")
-            exit()
+            return
          schedule.every().day.at(time_task, timezone(timezone_task)).do(a_mode, app, check_for_virus)
          app.write_box(f"Mode A2 scheduled successfully for {time_task} ({timezone_task}).")
          try:
@@ -909,7 +1041,7 @@ class App(ctk.CTk):
          except KeyboardInterrupt:
             app.write_box(f"Program finished at {datetime.now()}")
             app.write_box("Shutting down scheduler...")
-            exit()
+            return
       elif (app.argv.mode == "Mode 1B" or app.argv.mode == "Mode 2B") and not app.argv.source2:
          validate()
          if app.argv.mode == "Mode 1B":
@@ -920,13 +1052,9 @@ class App(ctk.CTk):
             manifest = "manifest2.json"
          check_if_file_exists(app.argv.source, manifest)
          app.write_box(f"Program finished at {datetime.now()}")
-         self.after(0, self.safe_destroy)
       elif app.argv.mode == "Mode C":
          self.withdraw()
          self.mode_c_window = notify_window(self)
-         #main_menu(app, "notify")
-         #app.write_box(f"Program finished at {datetime.now()}")
-         #self.after(0, self.safe_destroy)
       elif app.argv.mode == "Mode D1":
          logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
          #I added this because the logging was excessive by default, so now only actual errors, not standard http request information will show up.
@@ -937,23 +1065,22 @@ class App(ctk.CTk):
          manifest_target = load_manifest("manifest_cloud.json")
          download_blob(app, app.argv.ext, manifest_target, None)
          app.write_box(f"Program finished at {datetime.now()}")
-         self.after(0, self.safe_destroy)
       elif app.argv.mode == "Mode D2":
          time_task = os.getenv("TIME_IN_24_HOURS_CLOUD")
          timezone_task = os.getenv("TIMEZONE_DST_AWARE")
          if not time_task:
                app.write_box("Error: Time not provided. Please create a .env file based on .env example")
-               exit()
+               return
          if not timezone_task:
                app.write_box("Error: Timezone not provided. Please create a .env file based on .env example and pytz_timezones.txt")
-               exit()
+               return
          try:
                with open("schedule_pref.json", "r") as f:
                   info = json.load(f)
                check_for_virus = info.get("virus_check") 
          except Exception as e:
                app.write_box(f"Exception: {e}")
-               exit()
+               return
          logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
          #I added this because the logging was excessive by default, so now only actual errors, not standard http request information will show up.
          logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
@@ -970,32 +1097,28 @@ class App(ctk.CTk):
          valid = preventer(app.argv.source)
          if not valid:
                app.write_box("Error: Invalid format for directory. Valid example (Windows) C:/Users/Downloads or C:\\Users\\Downloads")
-               exit()
+               return
          mover(app, app.argv.source, "manifest")
          app.write_box(f"Program finished at {datetime.now()}")
-         self.after(0, self.safe_destroy)
       elif app.argv.mode == "Mode E2" and not app.argv.source2:
          valid = preventer(app.argv.source)
          if not valid:
                app.write_box("Error: Invalid format for directory. Valid example (Windows) C:/Users/Downloads or C:\\Users\\Downloads")
-               exit()
+               return
          mover(app, app.argv.source, "manifest2")
          app.write_box(f"Program finished at {datetime.now()}")
-         self.after(0, self.safe_destroy)
       elif app.argv.mode == "Mode E3" and (not app.argv.source and not app.argv.source2):
          logging.basicConfig(level=logging.INFO, filename="manifest_cloud.log", format='%(asctime)s - %(levelname)s: %(message)s', force=True)
          logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
          logging.getLogger("azure.core.pipeline.transport").setLevel(logging.WARNING)
          mover_2(app)
          app.write_box(f"Program finished at {datetime.now()}")
-         self.after(0, self.safe_destroy)
       else:
          if not app.argv.source2:
             app.write_box(f"{app.argv.mode} is not a valid mode. Please try again.")
          else:
             app.write_box(f"Please only use --source and not --source2. Thank you!")
          app.write_box(f"Program finished at {datetime.now()}") 
-         self.after(0, self.safe_destroy)
 app = App()
 app.mainloop()
 #os.walk(): https://www.w3schools.com/python/ref_os_walk.asp
