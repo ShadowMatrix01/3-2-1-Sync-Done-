@@ -111,6 +111,7 @@ def mover(directory, manifest):
                                 ).ask()
                      if mv_file == "A":
                         arr.remove(key)
+                        total_size -= int(file_size)
                         break_outer = True
                         inner = False
                      elif mv_file == "B":
