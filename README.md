@@ -1,10 +1,12 @@
-# 3-2-1-Sync-Done!
+# 3-2-1-Sync-Done! A Data Integrity Solution (CLI Version)
 ## Project Overview
 3-2-1, Sync Done! Practically demonstrates core data protection strategies. It complements the industry-standard 3-2-1 data backup policy and focuses on data integrity. The project uses scripts, cloud and local storage, health checks, and storage alerts to support these principles and help prevent hardware failure, data degradation, ransomware, file tampering, synchronization failures, software bugs, and human error. 
 
 -----------------------------------------------------------------------------------------------
 ## DISCLAIMER AND SETUP INSTRUCTIONS
-**TLDR**: Use the following format in your .env file.
+**FIRST TIME ONLY REQUIRED SETUP:  Run install.bat (Windows) or run install.sh (MacOS/Linus)**
+
+**TLDR**: Use the following format in your .env file. 
 
 URL=https://www.virustotal.com/api/v3/files/
 
@@ -20,7 +22,9 @@ AZURE_CONTAINER_TARGET=YOUR_TARGET_CONTAINER_TO_COPY_TO
 
 AZURE_CONTAINER_QUARANTINE=YOUR_AZURE_QUARANTINE_CONTAINER_NAME
 
-TIME_IN_24_HOURS=HH:MM
+TIME_IN_24_HOURS_LOCAL=HH:MM
+
+TIME_IN_24_HOURS_CLOUD=HH:MM
 
 TIMEZONE_DST_AWARE=YOUR_TIMEZONE
 
@@ -167,4 +171,4 @@ Run this command: **python3 main-control.py --source " " --mode "E3"**
 -----------------------------------------------------------------------------------------------
 ## Miscellaneous
 At this stage of the project, I cannot make any promises that all features I intend to add will be able to be done. If this is the case, this ReadMe.md will be updated accordingly. This tool is for diagnostic purposes only and does not provide data recovery services. If data loss or corruption is detected, users should rely on their established backup restoration procedures or professional data recovery services. Thank you! 
-### **LAST UPDATED: September 1st, 2026.**
+### **LAST UPDATED: September 23rd, 2026.**

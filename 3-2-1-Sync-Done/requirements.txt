@@ -1,0 +1,13 @@
+python-dotenv 
+ijson
+schedule
+questionary
+azure-core
+azure-storage-blob
+tqdm
+plyer
+pytz
+chime
+discord-webhook
+customtkinter
+Pillow
